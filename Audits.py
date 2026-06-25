@@ -2,21 +2,15 @@ import streamlit as st
 import pandas as pd
 import os
 import hashlib
+from datetime import datetime
 
 # -----------------------------
 # PAGE CONFIGURATION
 # -----------------------------
-st.set_page_config(layout="wide", page_title="Century Aluminum | Mt. Holly EHSQ Portal")
-
-# Custom Styling
-st.markdown("""
-    <style>
-    .stMetric { background-color: #f0f2f6; padding: 15px; border-radius: 10px; }
-    </style>
-""", unsafe_allow_html=True)
+st.set_page_config(layout="wide", page_title="Century Aluminum | EHSQ Management")
 
 # -----------------------------
-# AUTH & SESSION STATE
+# AUTHENTICATION
 # -----------------------------
 if "authenticated" not in st.session_state: st.session_state.authenticated = False
 if "user_name" not in st.session_state: st.session_state.user_name = None
@@ -42,54 +36,74 @@ if not st.session_state.authenticated:
                 st.session_state.authenticated = True
                 st.session_state.user_name = user.iloc[0]['name']
                 st.rerun()
-            else: st.error("Invalid credentials.")
     st.stop()
 
 # -----------------------------
-# DASHBOARD LOGIC
+# SUBMISSION DATABASE ENGINE
+# -----------------------------
+SUBMISSION_FILE = "submitted_audits.csv"
+
+def save_audit(data_dict):
+    df_new = pd.DataFrame([data_dict])
+    if os.path.exists(SUBMISSION_FILE):
+        df_old = pd.read_csv(SUBMISSION_FILE)
+        df_final = pd.concat([df_old, df_new], ignore_index=True)
+    else:
+        df_final = df_new
+    df_final.to_csv(SUBMISSION_FILE, index=False)
+
+# -----------------------------
+# DASHBOARD
 # -----------------------------
 st.sidebar.title("Mt. Holly Navigation")
-st.sidebar.info(f"User: **{st.session_state.user_name}**")
 if st.sidebar.button("Logout"):
     st.session_state.authenticated = False
     st.rerun()
 
 st.title("📊 Mt. Holly EHSQ Audit Hub")
+tab1, tab2, tab3 = st.tabs(["Compliance Dashboard", "Submit Audit", "Submission History"])
 
-# Data Loader
-@st.cache_data
-def load_audit_data(sheet_name):
-    file_path = "Audit Schedule - Internal - LPA.xlsx"
-    try:
-        return pd.read_excel(file_path, sheet_name=sheet_name)
-    except Exception:
-        return pd.DataFrame()
-
-# Create Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["Overview", "LPA Compliance", "Safety Observations", "Specialized Audits"])
-
+# TAB 1: DASHBOARD
 with tab1:
-    st.subheader("Performance KPIs")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Active Audits", "42") # Dynamic counts can be added here
-    c2.metric("Compliance Score", "94%")
-    c3.metric("System Status", "Operational")
-    st.write("Welcome to the centralized audit tracking system for the Mt. Holly facility.")
+    st.subheader("Master Compliance Ledger")
+    # Load your main schedule file here
+    if os.path.exists("Audit Schedule - Internal - LPA.xlsx"):
+        df_main = pd.read_excel("Audit Schedule - Internal - LPA.xlsx")
+        st.dataframe(df_main, use_container_width=True)
 
+# TAB 2: SUBMIT AUDIT
 with tab2:
-    st.subheader("LPA & HK Schedule")
-    hk_data = load_audit_data("HK")
-    if not hk_data.empty: st.dataframe(hk_data, use_container_width=True)
-    else: st.warning("HK Data missing.")
+    st.subheader("New Audit Submission")
+    with st.form("audit_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        area = col1.selectbox("Department/Area", ["Carbon", "Cast House", "Potline", "Maintenance", "Environmental"])
+        auditor = col2.text_input("Auditor Name", value=st.session_state.user_name)
+        
+        status = st.selectbox("Compliance Status", ["Compliant", "Non-Compliant", "Risk Corrected"])
+        notes = st.text_area("Observations / Notes")
+        
+        submitted = st.form_submit_button("Submit Audit Record")
+        
+        if submitted:
+            data = {
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Auditor": auditor,
+                "Area": area,
+                "Status": status,
+                "Notes": notes
+            }
+            save_audit(data)
+            st.success("Audit submitted successfully! It has been added to the local log.")
 
+# TAB 3: HISTORY
 with tab3:
-    st.subheader("Safe Observations (GS/EHS & Leadership)")
-    obs_data = load_audit_data("Safe Obs GS EHS")
-    if not obs_data.empty: st.dataframe(obs_data, use_container_width=True)
-
-with tab4:
-    st.subheader("LOTO, PPE & Mobile Equipment")
-    loto = load_audit_data("LOTO")
-    if not loto.empty: 
-        st.write("### LOTO Log")
-        st.dataframe(loto, use_container_width=True)
+    st.subheader("Audit Submission Log")
+    if os.path.exists(SUBMISSION_FILE):
+        df_logs = pd.read_csv(SUBMISSION_FILE)
+        st.dataframe(df_logs, use_container_width=True)
+        
+        # Download button to get the data out
+        with open(SUBMISSION_FILE, "rb") as file:
+            st.download_button("Download All Submissions (CSV)", file, "audit_history.csv")
+    else:
+        st.info("No audits submitted yet.")
