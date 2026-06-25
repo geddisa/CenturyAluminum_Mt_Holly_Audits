@@ -21,26 +21,42 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# 🔒 SECURE USER DATABASE (Mock Database / Secrets Integration)
-# In a live environment, these should be stored in `.streamlit/secrets.toml` or a database
+# 🔒 SECURE USER DATABASE ENGINE
 # -----------------------------
+DB_FILE = "users_db.csv"
+
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Example corporate user registry with securely hashed passwords
-# Default password for these mock examples is "Century2026!"
-USER_DB = {
-    "admin@centuryaluminum.com": {
-        "name": "System Administrator",
-        "password_hash": "69ba74a6256f1aa93382f76aa0cb4a6bf6d54d2417730e2cf711d95ee34d166c" 
-    },
-    "auditor1@centuryaluminum.com": {
-        "name": "Quality Inspector",
-        "password_hash": "69ba74a6256f1aa93382f76aa0cb4a6bf6d54d2417730e2cf711d95ee34d166c"
-    }
-}
+def load_users():
+    if os.path.exists(DB_FILE):
+        return pd.read_csv(DB_FILE).set_index("email").to_dict(orient="index")
+    else:
+        # Create default admin entry on first run
+        default_users = {
+            "admin@centuryaluminum.com": {
+                "name": "System Administrator",
+                "password_hash": hash_password("Century2026!")
+            }
+        }
+        df = pd.DataFrame.from_dict(default_users, orient="index").reset_index().rename(columns={"index": "email"})
+        df.to_csv(DB_FILE, index=False)
+        return default_users
 
-# Initialize login session state
+def save_new_user(email, name, password):
+    users = load_users()
+    if email in users:
+        return False
+    
+    new_row = pd.DataFrame([{
+        "email": email,
+        "name": name,
+        "password_hash": hash_password(password)
+    }])
+    new_row.to_csv(DB_FILE, mode='a', header=not os.path.exists(DB_FILE), index=False)
+    return True
+
+# Initialize session validation states
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "auth_user_email" not in st.session_state:
@@ -49,53 +65,82 @@ if "auth_user_name" not in st.session_state:
     st.session_state.auth_user_name = ""
 
 # -----------------------------
-# 🛡️ AUTHENTICATION INTERFACE
+# 🛡️ AUTHENTICATION GATEWAY (SIGN-IN & SIGN-UP)
 # -----------------------------
 if not st.session_state.authenticated:
     st.title("🔒 Corporate Security Access Gateway")
     st.markdown("### Century Aluminum Company — Internal EHSQ Systems")
     st.markdown("---")
     
-    with st.container():
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
-        st.subheader("Sign In")
-        
-        email_input = st.text_input("Corporate Email Address", placeholder="username@centuryaluminum.com")
-        password_input = st.text_input("Password", type="password")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Verify Identity & Sign In", use_container_width=True):
-            clean_email = email_input.strip().lower()
+    # Toggle between Logging In and Creating an Account
+    auth_mode = st.radio("Choose Action:", ["Sign In", "Secure Registration (New User)"], horizontal=True)
+    
+    users_database = load_users()
+
+    if auth_mode == "Sign In":
+        with st.container():
+            st.markdown('<div class="login-box">', unsafe_allow_html=True)
+            st.subheader("Account Sign In")
             
-            # 1. Enforce strict domain boundaries immediately
-            if not clean_email.endswith("@centuryaluminum.com"):
-                st.error("❌ Access Denied. Only valid corporate domain accounts are authorized.")
+            email_input = st.text_input("Corporate Email Address", placeholder="username@centuryaluminum.com", key="login_email")
+            password_input = st.text_input("Password", type="password", key="login_pass")
             
-            # 2. Cryptographically verify the credentials against the secure registry
-            elif clean_email in USER_DB and hash_password(password_input) == USER_DB[clean_email]["password_hash"]:
-                st.session_state.authenticated = True
-                st.session_state.auth_user_email = clean_email
-                st.session_state.auth_user_name = USER_DB[clean_email]["name"]
-                st.success("✅ Credentials verified. Access granted.")
-                st.rerun()
-            else:
-                st.error("❌ Invalid email or password. Please try again or contact IT support.")
+            if st.button("Verify Identity & Sign In", use_container_width=True):
+                clean_email = email_input.strip().lower()
                 
-        st.markdown("""
-            <p style='font-size: 11px; color: #64748B; margin-top: 1.5rem; text-align: center;'>
-                Warning: This system is private and restricted to authorized Century Aluminum personnel. All access attempts are logged.
-            </p>
-        """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.stop()
+                if not clean_email.endswith("@centuryaluminum.com"):
+                    st.error("❌ Access Denied. Only valid @centuryaluminum.com domains are authorized.")
+                elif clean_email in users_database and hash_password(password_input) == users_database[clean_email]["password_hash"]:
+                    st.session_state.authenticated = True
+                    st.session_state.auth_user_email = clean_email
+                    st.session_state.auth_user_name = users_database[clean_email]["name"]
+                    st.success("✅ Credentials verified. Access granted.")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid email or password.")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    else:
+        with st.container():
+            st.markdown('<div class="login-box">', unsafe_allow_html=True)
+            st.subheader("Create Authorized Profile")
+            st.info("Registration requires an official Century Aluminum email account.")
+            
+            reg_name = st.text_input("Full Name (First Last)", placeholder="John Doe")
+            reg_email = st.text_input("Corporate Email Address", placeholder="username@centuryaluminum.com")
+            reg_password = st.text_input("Choose Password", type="password", help="Make sure it's strong and unique.")
+            confirm_password = st.text_input("Confirm Password", type="password")
+            
+            if st.button("Register Corporate Profile", use_container_width=True):
+                clean_reg_email = reg_email.strip().lower()
+                
+                if not reg_name.strip():
+                    st.error("❌ Please provide your full name.")
+                elif not clean_reg_email.endswith("@centuryaluminum.com"):
+                    st.error("❌ Registration Blocked. Email domain must explicitly be @centuryaluminum.com.")
+                elif len(reg_password) < 6:
+                    st.error("❌ Password must be at least 6 characters long.")
+                elif reg_password != confirm_password:
+                    st.error("❌ Password validation mismatch. Ensure both entry fields match perfectly.")
+                elif clean_reg_email in users_database:
+                    st.error("❌ An account with this corporate email address is already registered.")
+                else:
+                    success = save_new_user(clean_reg_email, reg_name.strip(), reg_password)
+                    if success:
+                        st.success("🎉 Registration complete! Please switch to the 'Sign In' tab above to authenticate.")
+                    else:
+                        st.error("❌ A database writing error occurred.")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    st.stop() # Freeze content loading until signed in
 
 # -----------------------------
-# CORE DATA PROCESSING (Only executes if authenticated)
+# CORE DATA PROCESSING (Only runs once verified)
 # -----------------------------
 excel_file = "Audit Schedule - Internal - LPA.xlsx"
 
 if not os.path.exists(excel_file):
-    st.error("❌ System Error: Source Excel schedule template matrix file not found.")
+    st.error("❌ System Error: Source Excel file not found.")
     st.stop()
 
 xls = pd.ExcelFile(excel_file)
@@ -124,26 +169,11 @@ for sheet in xls.sheet_names:
 
 name_list = sorted(list(all_names))
 
-@st.cache_data
-def parse_excel_history():
-    compiled_records = []
-    def parse_header_date(header_str):
-        if pd.isna(header_str): return None
-        match = re.search(r'(\d+)/(\d+)/(\d+)', str(header_str))
-        if match: return pd.to_datetime(f"20{match.group(3)}-{match.group(1)}-{match.group(2)}")
-        match_iso = re.search(r'(\d{4})-(\d{2})-(\d{2})', str(header_str))
-        if match_iso: return pd.to_datetime(match_iso.group(0))
-        return None
-
-    # [Parsing pipelines for HK, HK Scores, LOTO, PPE, Mobile Equip, Safe Obs go here natively as configured previously]
-    # For brevity, pulling the pre-built internal structured historical dataframe:
-    return pd.DataFrame(columns=["Date", "Auditor", "Area", "Type", "Score", "Notes"])
-
 if os.path.exists("audit_data.csv"):
     user_data = pd.read_csv("audit_data.csv")
     user_data["Date"] = pd.to_datetime(user_data["Date"])
 else:
-    user_data = parse_excel_history()
+    user_data = pd.DataFrame(columns=["Date", "Auditor", "Area", "Type", "Score", "Notes"])
 
 def save_user_data(df):
     df.to_csv("audit_data.csv", index=False)
