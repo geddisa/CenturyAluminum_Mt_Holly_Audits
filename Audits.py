@@ -172,7 +172,8 @@ if not name_list:
 # -----------------------------
 if os.path.exists("audit_data.csv"):
     user_data = pd.read_csv("audit_data.csv")
-    user_data["Date"] = pd.to_datetime(user_data["Date"])
+    # Avoid parsing failures if formatting shifts over runtime saves
+    user_data["Date"] = pd.to_datetime(user_data["Date"], errors='coerce')
 else:
     user_data = pd.DataFrame(columns=["Date", "Auditor", "Area", "Type", "Score", "Notes"])
 
@@ -183,11 +184,20 @@ def save_user_data(df):
 # SIDEBAR CONTROL PANEL
 # -----------------------------
 st.sidebar.markdown(f"👤 **Session Profile:**\n**{st.session_state.auth_user_name}**\n`{st.session_state.auth_user_email}`")
-if st.sidebar.button("Secure Logout", use_container_width=True):
-    st.session_state.authenticated = False
-    st.session_state.auth_user_email = ""
-    st.session_state.auth_user_name = ""
-    st.rerun()
+
+side_col1, side_col2 = st.sidebar.columns(2)
+with side_col1:
+    if st.button("Secure Logout", use_container_width=True):
+        st.session_state.authenticated = False
+        st.session_state.auth_user_email = ""
+        st.session_state.auth_user_name = ""
+        st.rerun()
+with side_col2:
+    if st.button("⚠️ Reset All", use_container_width=True, help="Wipes manual entries completely"):
+        if os.path.exists("audit_data.csv"):
+            os.remove("audit_data.csv")
+        st.cache_data.clear()
+        st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🏢 Facility Management")
@@ -210,7 +220,32 @@ if page == "📊 Dashboard":
     
     st.markdown("---")
     st.subheader("📋 Historical Consolidated Data Ledger")
-    st.dataframe(user_data, use_container_width=True)
+    
+    if not user_data.empty:
+        # Display index as a visible Row ID column so people know which entry number to delete
+        display_df = user_data.copy()
+        display_df.index.name = "Row ID"
+        st.dataframe(display_df.reset_index(), use_container_width=True)
+        
+        # 🗑️ REMOVE/DELETE ENTRY PANEL
+        st.markdown("### 🛠️ Record Management Panel")
+        del_col1, del_col2 = st.columns([1, 3])
+        
+        with del_col1:
+            row_to_delete = st.selectbox(
+                "Select Row ID to Delete", 
+                options=list(user_data.index),
+                format_func=lambda idx: f"ID {idx} - {user_data.loc[idx, 'Auditor']} ({user_data.loc[idx, 'Type']})"
+            )
+        with del_col2:
+            st.markdown("<br>", unsafe_allow_html=True) # Align button with selector vertically
+            if st.button("🗑️ Delete Selected Audit Entry", type="primary"):
+                user_data = user_data.drop(row_to_delete).reset_index(drop=True)
+                save_user_data(user_data)
+                st.success(f"✅ Record ID {row_to_delete} successfully scrubbed from database.")
+                st.rerun()
+    else:
+        st.info("The internal database ledger is currently empty. Submit a log sheet entry in 'Enter Audit' to begin.")
 
 elif page == "📋 Enter Audit":
     st.header("Enter New Audit Sheet Records")
@@ -220,13 +255,11 @@ elif page == "📋 Enter Audit":
         area = st.selectbox("Plant Operational Area", ["Maintenance", "Carbon", "Cast House", "Potline", "Environmental"])
         audit_type = st.selectbox("Audit Type Classification", ["LPA", "Safe Observation", "PPE", "LOTO", "Mobile Equipment", "HK Score"])
         
-        # 🟢 NEW feature: Mark complete without needing a numerical pass/fail score
         is_complete_only = st.checkbox(
             "Mark Audit as Complete (Score not required / observations only)", 
             help="Check this if the inspection type relies on completion status/checkmarks rather than a raw percentage score."
         )
         
-        # Conditionally disable score input if marked complete only
         score = st.number_input(
             "Recorded Performance Score (%)", 
             min_value=0.0, max_value=100.0, value=100.0, step=1.0,
@@ -237,7 +270,6 @@ elif page == "📋 Enter Audit":
         notes = st.text_area("Observations & Notes")
 
         if st.form_submit_button("Submit Entry to Database"):
-            # Set internal values based on completion checkbox selection
             final_score = 100.0 if is_complete_only else score
             completion_tag = "[COMPLETE]" if is_complete_only else f"[{score}%]"
             
