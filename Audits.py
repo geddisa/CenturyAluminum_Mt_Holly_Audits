@@ -19,34 +19,39 @@ if not os.path.exists(excel_file):
 
 xls = pd.ExcelFile(excel_file)
 
-st.success("✅ File loaded")
-
 # -----------------------------
-# ✅ GET ALL NAMES FROM ALL SHEETS
+# ✅ GET ONLY REAL PERSON NAMES
 # -----------------------------
 all_names = set()
+
+COMMON_NON_NAMES = ["Room", "West", "East", "Side", "Shop", "Tank", "Mill"]
 
 for sheet in xls.sheet_names:
     df_temp = pd.read_excel(excel_file, sheet_name=sheet)
 
     for col in df_temp.columns:
-        for val in df_temp[col]:
+        for val in df_temp[col].dropna():
             if isinstance(val, str):
                 val = val.strip()
+                words = val.split()
 
-                # simple filter (keeps names, removes junk)
-                if val and len(val.split()) >= 2:
+                if (
+                    len(words) == 2                            # exactly 2 words
+                    and all(w[0].isupper() for w in words)     # capitalized
+                    and all(w.isalpha() for w in words)        # letters only
+                    and not any(w in COMMON_NON_NAMES for w in words)
+                ):
                     all_names.add(val)
 
 # convert to sorted list
 name_list = sorted(all_names)
 
 # -----------------------------
-# Sidebar navigation
+# SIDEBAR NAV
 # -----------------------------
 page = st.sidebar.radio(
     "Navigation",
-    ["📊 Dashboard", "📋 Enter Audit", "📁 Excel Data Viewer", "👥 All Names"]
+    ["📊 Dashboard", "📋 Enter Audit", "📁 Excel Viewer", "👥 Names"]
 )
 
 # -----------------------------
@@ -72,30 +77,18 @@ if page == "📋 Enter Audit":
     st.header("Enter New Audit")
 
     with st.form("audit_form"):
-
-        # ✅ dynamic names instead of hardcoded
         auditor = st.selectbox("Auditor", name_list)
 
         area = st.selectbox("Area", [
-            "Maintenance",
-            "Carbon",
-            "Cast House",
-            "Potline",
-            "Environmental"
+            "Maintenance", "Carbon", "Cast House", "Potline", "Environmental"
         ])
 
         audit_type = st.selectbox("Audit Type", [
-            "LPA",
-            "Safe Observation",
-            "PPE",
-            "LOTO",
-            "Mobile Equipment"
+            "LPA", "Safe Observation", "PPE", "LOTO", "Mobile Equipment"
         ])
 
         score = st.number_input("Score (%)", 0.0, 100.0)
-
         audit_date = st.date_input("Date", value=date.today())
-
         notes = st.text_area("Notes")
 
         submitted = st.form_submit_button("Submit")
@@ -124,16 +117,12 @@ elif page == "📊 Dashboard":
     if user_data.empty:
         st.warning("No audits yet.")
     else:
-        st.sidebar.subheader("Filters")
-
         auditor_filter = st.sidebar.selectbox(
-            "Auditor",
-            ["All"] + list(user_data["Auditor"].unique())
+            "Auditor", ["All"] + list(user_data["Auditor"].unique())
         )
 
         area_filter = st.sidebar.selectbox(
-            "Area",
-            ["All"] + list(user_data["Area"].unique())
+            "Area", ["All"] + list(user_data["Area"].unique())
         )
 
         df = user_data.copy()
@@ -149,8 +138,10 @@ elif page == "📊 Dashboard":
         col2.metric("Avg Score", round(df["Score"].mean(), 1))
         col3.metric("Areas", df["Area"].nunique())
 
+        st.subheader("Performance by Auditor")
         st.bar_chart(df.groupby("Auditor")["Score"].mean())
 
+        st.subheader("Trend Over Time")
         df["Date"] = pd.to_datetime(df["Date"])
         st.line_chart(df.groupby("Date")["Score"].mean())
 
@@ -159,20 +150,19 @@ elif page == "📊 Dashboard":
 # -----------------------------
 # 📁 EXCEL VIEWER
 # -----------------------------
-elif page == "📁 Excel Data Viewer":
+elif page == "📁 Excel Viewer":
     st.header("Excel Data")
 
     sheet = st.selectbox("Select Sheet", xls.sheet_names)
-
     df_excel = pd.read_excel(excel_file, sheet_name=sheet)
 
     st.dataframe(df_excel)
 
 # -----------------------------
-# 👥 ALL NAMES PAGE
+# 👥 VIEW ALL NAMES
 # -----------------------------
-elif page == "👥 All Names":
-    st.header("All Names Found")
+elif page == "👥 Names":
+    st.header("All Employee Names")
 
-    st.write(f"Total: {len(name_list)}")
+    st.write(f"Total Names Found: {len(name_list)}")
     st.dataframe(pd.DataFrame(name_list, columns=["Names"]))
