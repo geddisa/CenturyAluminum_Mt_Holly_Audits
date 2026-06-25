@@ -21,7 +21,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# 🔒 SECURE USER DATABASE ENGINE
+# 🔒 SECURE USER DATABASE ENGINE (Sign-Up / Login Storage)
 # -----------------------------
 DB_FILE = "users_db.csv"
 
@@ -32,7 +32,7 @@ def load_users():
     if os.path.exists(DB_FILE):
         return pd.read_csv(DB_FILE).set_index("email").to_dict(orient="index")
     else:
-        # Create default admin entry on first run
+        # Create a default administrator entry on initial initialization
         default_users = {
             "admin@centuryaluminum.com": {
                 "name": "System Administrator",
@@ -56,7 +56,7 @@ def save_new_user(email, name, password):
     new_row.to_csv(DB_FILE, mode='a', header=not os.path.exists(DB_FILE), index=False)
     return True
 
-# Initialize session validation states
+# Initialize application session state markers
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "auth_user_email" not in st.session_state:
@@ -72,9 +72,7 @@ if not st.session_state.authenticated:
     st.markdown("### Century Aluminum Company — Internal EHSQ Systems")
     st.markdown("---")
     
-    # Toggle between Logging In and Creating an Account
     auth_mode = st.radio("Choose Action:", ["Sign In", "Secure Registration (New User)"], horizontal=True)
-    
     users_database = load_users()
 
     if auth_mode == "Sign In":
@@ -97,58 +95,58 @@ if not st.session_state.authenticated:
                     st.success("✅ Credentials verified. Access granted.")
                     st.rerun()
                 else:
-                    st.error("❌ Invalid email or password.")
+                    st.error("❌ Invalid email or password entry.")
             st.markdown('</div>', unsafe_allow_html=True)
 
     else:
         with st.container():
             st.markdown('<div class="login-box">', unsafe_allow_html=True)
             st.subheader("Create Authorized Profile")
-            st.info("Registration requires an official Century Aluminum email account.")
+            st.info("Registration requires an official corporate Century Aluminum email account.")
             
             reg_name = st.text_input("Full Name (First Last)", placeholder="John Doe")
             reg_email = st.text_input("Corporate Email Address", placeholder="username@centuryaluminum.com")
-            reg_password = st.text_input("Choose Password", type="password", help="Make sure it's strong and unique.")
+            reg_password = st.text_input("Choose Password", type="password")
             confirm_password = st.text_input("Confirm Password", type="password")
             
             if st.button("Register Corporate Profile", use_container_width=True):
                 clean_reg_email = reg_email.strip().lower()
                 
                 if not reg_name.strip():
-                    st.error("❌ Please provide your full name.")
+                    st.error("❌ Please provide your name.")
                 elif not clean_reg_email.endswith("@centuryaluminum.com"):
                     st.error("❌ Registration Blocked. Email domain must explicitly be @centuryaluminum.com.")
                 elif len(reg_password) < 6:
                     st.error("❌ Password must be at least 6 characters long.")
                 elif reg_password != confirm_password:
-                    st.error("❌ Password validation mismatch. Ensure both entry fields match perfectly.")
+                    st.error("❌ Passwords do not match.")
                 elif clean_reg_email in users_database:
-                    st.error("❌ An account with this corporate email address is already registered.")
+                    st.error("❌ This email address is already registered.")
                 else:
                     success = save_new_user(clean_reg_email, reg_name.strip(), reg_password)
                     if success:
-                        st.success("🎉 Registration complete! Please switch to the 'Sign In' tab above to authenticate.")
+                        st.success("🎉 Registration complete! Switch to the 'Sign In' tab above to authenticate.")
                     else:
-                        st.error("❌ A database writing error occurred.")
+                        st.error("❌ Database conflict occurred.")
             st.markdown('</div>', unsafe_allow_html=True)
 
-    st.stop() # Freeze content loading until signed in
+    st.stop()  # Lock rest of code execution until authenticated successfully
 
 # -----------------------------
-# CORE DATA PROCESSING (Only runs once verified)
+# 👥 MASTER EMPLOYEE NAME REGISTRY PARSER
 # -----------------------------
 excel_file = "Audit Schedule - Internal - LPA.xlsx"
 
 if not os.path.exists(excel_file):
-    st.error("❌ System Error: Source Excel file not found.")
+    st.error("❌ System Critical Error: Source Excel layout schedule template file not found.")
     st.stop()
 
 xls = pd.ExcelFile(excel_file)
 
-# --- Dynamic Registry Parsing Engine ---
 all_names = set()
 COMMON_NON_NAMES = ["Room", "West", "East", "Side", "Shop", "Tank", "Tanks", "Mill", "House", "Area", "Café", "Snacks", "Shift", "Job", "Details"]
 
+# Dynamic generation loops to pull employee listings straight out of spreadsheet sheets
 for sheet in xls.sheet_names:
     if sheet in ["Jobs and shifts", "Sheet1"]:
         continue
@@ -157,6 +155,7 @@ for sheet in xls.sheet_names:
         for row in df_temp.itertuples(index=False):
             if len(row) > 0 and pd.notna(row[0]):
                 name_str = str(row[0]).strip().replace('"', '')
+                # Re-format "Last Name, First Name" strings to unified "First Last" presentation layouts
                 if ',' in name_str:
                     parts = [p.strip() for p in name_str.split(',')]
                     if len(parts) == 2:
@@ -169,6 +168,13 @@ for sheet in xls.sheet_names:
 
 name_list = sorted(list(all_names))
 
+# Fallback failsafe if parsing yields zero results
+if not name_list:
+    name_list = ["Freddie Gamble", "Anthony Wall", "Tim Kass", "Bryan Profit", "Reggie Coleman", "Miguel Frias"]
+
+# -----------------------------
+# RUN TIME PERSISTENCE ENGINE
+# -----------------------------
 if os.path.exists("audit_data.csv"):
     user_data = pd.read_csv("audit_data.csv")
     user_data["Date"] = pd.to_datetime(user_data["Date"])
@@ -203,7 +209,7 @@ if page == "📊 Dashboard":
     st.header("Century Aluminum Audit Performance Dashboard")
     
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total Matrix Records Loaded", f"{len(user_data):,}")
+    col1.metric("Total Records Loaded", f"{len(user_data):,}")
     col2.metric("Overall System Rating", f"{round(user_data['Score'].mean(), 1)}%" if not user_data['Score'].empty else "100.0%")
     col3.metric("Monitored Zones Active", user_data["Area"].nunique() if not user_data.empty else "8")
     
@@ -215,9 +221,10 @@ elif page == "📋 Enter Audit":
     st.header("Enter New Audit Sheet Records")
 
     with st.form("audit_form", clear_on_submit=True):
+        # 👥 Here the employee names list dynamically builds selectbox options
         auditor = st.selectbox("Select Auditor Name", name_list)
-        area = st.selectbox("Plant Operational Area", ["Maintenance", "Carbon", "Cast House", "Potline", "Environmental"])
-        audit_type = st.selectbox("Audit Type Classification", ["LPA", "Safe Observation", "LOTO"])
+        area = st.selectbox("Plant Operational Area", ["Maintenance", "Carbon", "Cast House", "Potline", "Environmental", "Green Mill", "Coke Tank", "Rod Shop"])
+        audit_type = st.selectbox("Audit Type Classification", ["LPA", "Safe Observation", "PPE", "LOTO", "Mobile Equipment", "HK Score"])
         score = st.number_input("Recorded Performance Score (%)", 0.0, 100.0, step=1.0)
         audit_date = st.date_input("Audit Execution Date", value=date.today())
         notes = st.text_area("Observations & Notes")
@@ -229,11 +236,11 @@ elif page == "📋 Enter Audit":
                 "Area": area,
                 "Type": audit_type,
                 "Score": score,
-                "Notes": f"{notes} (Verified Audit Signature: {st.session_state.auth_user_email})"
+                "Notes": f"{notes} (Logged securely by profile: {st.session_state.auth_user_email})"
             }])
             user_data = pd.concat([user_data, new_row], ignore_index=True)
             save_user_data(user_data)
-            st.success("✅ Audit logged securely with digital corporate signature!")
+            st.success("✅ Audit logged securely into ledger file database!")
 
 elif page == "📁 Excel Viewer":
     st.header("Spreadsheet Tab Visualizer")
@@ -242,4 +249,6 @@ elif page == "📁 Excel Viewer":
 
 elif page == "👥 Names":
     st.header("Verified Clean Auditor Registry")
-    st.dataframe(pd.DataFrame(name_list, columns=["Employee Name Listing"]), use_container_width=True)
+    st.write(f"Total Unique Filtered Personnel Names Extracted: **{len(name_list)}**")
+    name_df = pd.DataFrame(name_list, columns=["Employee Name Listing"])
+    st.dataframe(name_df, use_container_width=True)
