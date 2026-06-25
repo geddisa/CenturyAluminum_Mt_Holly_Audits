@@ -1,77 +1,75 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
 import os
 import hashlib
 
 # -----------------------------
-# PAGE SETUP
+# PAGE CONFIGURATION
 # -----------------------------
 st.set_page_config(layout="wide", page_title="Century Aluminum - EHSQ Auditing Platform")
 
 # -----------------------------
-# AUTHENTICATION STATE
+# AUTHENTICATION & SESSION STATE
 # -----------------------------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
-if "auth_user_email" not in st.session_state:
-    st.session_state.auth_user_email = ""
-if "auth_user_name" not in st.session_state:
-    st.session_state.auth_user_name = ""
+if "user_name" not in st.session_state:
+    st.session_state.user_name = None
 
-# -----------------------------
-# USER DB ENGINE
-# -----------------------------
 DB_FILE = "users_db.csv"
 
-def hash_password(password: str) -> str:
+def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def load_users():
+def get_users_df():
     if os.path.exists(DB_FILE):
-        return pd.read_csv(DB_FILE).set_index("email").to_dict(orient="index")
-    return {"admin@centuryaluminum.com": {"name": "System Administrator", "password_hash": hash_password("Century2026!")}}
+        return pd.read_csv(DB_FILE)
+    return pd.DataFrame(columns=["email", "name", "password"])
 
 # -----------------------------
-# AUTH WALL
+# LOGIN / SIGNUP INTERFACE
 # -----------------------------
 if not st.session_state.authenticated:
     st.title("🛡️ Identity Access Gateway")
-    email_input = st.text_input("Corporate Email")
-    password_input = st.text_input("Password", type="password")
     
-    if st.button("Login"):
-        users = load_users()
-        if email_input in users and hash_password(password_input) == users[email_input]["password_hash"]:
-            st.session_state.authenticated = True
-            st.session_state.auth_user_email = email_input
-            st.session_state.auth_user_name = users[email_input]["name"]
-            st.rerun()
-        else:
-            st.error("Invalid credentials.")
+    choice = st.radio("Select Action:", ["Login", "Sign Up"])
+    
+    if choice == "Login":
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        if st.button("Login"):
+            users = get_users_df()
+            user = users[users['email'] == email]
+            if not user.empty and user.iloc[0]['password'] == hash_password(password):
+                st.session_state.authenticated = True
+                st.session_state.user_name = user.iloc[0]['name']
+                st.rerun()
+            else:
+                st.error("Invalid email or password.")
+                
+    else:  # Sign Up
+        name = st.text_input("Full Name")
+        email = st.text_input("Email")
+        password = st.text_input("Create Password", type="password")
+        if st.button("Register"):
+            users = get_users_df()
+            if email in users['email'].values:
+                st.error("Email already exists.")
+            else:
+                new_user = pd.DataFrame([{"email": email, "name": name, "password": hash_password(password)}])
+                pd.concat([users, new_user]).to_csv(DB_FILE, index=False)
+                st.success("Account created! Please login.")
     st.stop()
 
 # -----------------------------
-# MAIN APP
+# SECURED APP CONTENT
 # -----------------------------
-st.sidebar.markdown(f"**Logged In:** {st.session_state.auth_user_name}")
+st.sidebar.write(f"**Welcome, {st.session_state.user_name}**")
 if st.sidebar.button("Logout"):
-    for key in st.session_state.keys():
-        del st.session_state[key]
+    st.session_state.authenticated = False
     st.rerun()
 
 st.title("Century Aluminum Corporate Audit Hub")
+st.write("You have successfully accessed the secure audit dashboard.")
 
-# Data loading engine
-@st.cache_data
-def load_data():
-    file_path = "Audit Schedule - Internal - LPA.xlsx"
-    if os.path.exists(file_path):
-        return pd.read_excel(file_path)
-    return pd.DataFrame()
-
-df = load_data()
-if not df.empty:
-    st.dataframe(df, use_container_width=True)
-else:
-    st.info("No data file found. Ensure 'Audit Schedule - Internal - LPA.xlsx' is uploaded.")
+# Your data loading logic here
