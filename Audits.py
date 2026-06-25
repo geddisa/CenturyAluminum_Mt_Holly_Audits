@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import date
 import os
 import hashlib
+import re
 
 # -----------------------------
 # PAGE SETUP & CONFIG
@@ -132,7 +133,7 @@ if not st.session_state.authenticated:
     st.stop()
 
 # -----------------------------
-# 👥 MASTER EMPLOYEE NAME REGISTRY PARSER
+# 👥 MASTER AUDITOR REGISTRY CLEANER
 # -----------------------------
 excel_file = "Audit Schedule - Internal - LPA.xlsx"
 
@@ -140,32 +141,54 @@ if not os.path.exists(excel_file):
     st.error("❌ System Critical Error: Source Excel file not found.")
     st.stop()
 
-xls = pd.ExcelFile(excel_file)
+@st.cache_data
+def get_clean_auditor_names(file_path):
+    xls = pd.ExcelFile(file_path)
+    discovered_names = set()
+    
+    # Specific keywords and strings to skip from data tables
+    EXCLUDE_KEYWORDS = {
+        "week", "sheet", "audit", "shift", "room", "bake", "casting", "fabrication", 
+        "compressor", "hot side", "cold side", "east", "west", "baghouse", "tank", 
+        "mill", "shop", "rod", "house", "fluid", "building", "café", "snacks", 
+        "catering", "equipment", "score", "formula", "required", "vacation", "complete", "loto"
+    }
 
-all_names = set()
-COMMON_NON_NAMES = ["Room", "West", "East", "Side", "Shop", "Tank", "Tanks", "Mill", "House", "Area", "Café", "Snacks", "Shift", "Job", "Details"]
+    for sheet in xls.sheet_names:
+        if sheet in ["Jobs and shifts", "Sheet1"]:
+            continue
+        try:
+            df_temp = pd.read_excel(file_path, sheet_name=sheet)
+            for row in df_temp.itertuples(index=False):
+                for cell in row:
+                    if pd.isna(cell):
+                        continue
+                    cell_str = str(cell).strip().replace('"', '')
+                    
+                    if not cell_str or any(k in cell_str.lower() for k in EXCLUDE_KEYWORDS):
+                        continue
+                    
+                    # Scenario A: Last, First formatting (e.g., "Adams, Kenneth")
+                    if ',' in cell_str:
+                        parts = [p.strip() for p in cell_str.split(',')]
+                        if len(parts) == 2:
+                            # Clean up nick-names in parentheses if present
+                            first_name = re.sub(r'\(.*?\)', '', parts[1]).strip()
+                            last_name = parts[0].strip()
+                            cell_str = f"{first_name} {last_name}"
+                    
+                    # Verify string has a First and Last name token layout 
+                    words = cell_str.split()
+                    if len(words) >= 2 and words[0][0].isupper() and words[1][0].isupper() and len(cell_str) < 30:
+                        discovered_names.add(cell_str)
+        except:
+            pass
+            
+    return sorted(list(discovered_names))
 
-for sheet in xls.sheet_names:
-    if sheet in ["Jobs and shifts", "Sheet1"]:
-        continue
-    try:
-        df_temp = pd.read_excel(excel_file, sheet_name=sheet)
-        for row in df_temp.itertuples(index=False):
-            if len(row) > 0 and pd.notna(row[0]):
-                name_str = str(row[0]).strip().replace('"', '')
-                if ',' in name_str:
-                    parts = [p.strip() for p in name_str.split(',')]
-                    if len(parts) == 2:
-                        name_str = f"{parts[1]} {parts[0]}"
-                words = name_str.split()
-                if len(words) >= 2 and words[0][0].isupper() and not any(w in COMMON_NON_NAMES for w in words):
-                    all_names.add(name_str)
-    except:
-        pass
-
-name_list = sorted(list(all_names))
+name_list = get_clean_auditor_names(excel_file)
 if not name_list:
-    name_list = ["Freddie Gamble", "Anthony Wall", "Tim Kass", "Bryan Profit", "Reggie Coleman", "Miguel Frias"]
+    name_list = ["Anthony Wall", "Art DiFilippo", "Brett Meyer", "Brian Weatherford", "Bryan Profit", "Freddie Gamble", "Tim Kass"]
 
 # -----------------------------
 # RUN TIME PERSISTENCE ENGINE
@@ -202,11 +225,9 @@ page = st.sidebar.radio(
 if page == "📊 Dashboard":
     st.header("Century Aluminum Audit Performance Dashboard")
     
-    # KPIs Layout
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Records Loaded", f"{len(user_data):,}")
     
-    # Calculate scores dynamic safe logic
     if not user_data.empty:
         try:
             avg_score = round(pd.to_numeric(user_data['Score']).mean(), 1)
@@ -228,7 +249,6 @@ if page == "📊 Dashboard":
         display_df.index.name = "Row ID"
         st.dataframe(display_df.reset_index(), use_container_width=True)
         
-        # 🗑️ REDOVE RECORD INTERACTIVE CONSOLE
         st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
         st.subheader("🗑️ Record Management Panel")
         st.markdown("Select a targeted layout entry row index below to permanently scrub it from the storage layer.")
@@ -265,39 +285,4 @@ elif page == "📋 Enter Audit":
             
             is_complete_only = st.checkbox(
                 "Mark Audit as Complete (Score not required / observations only)", 
-                help="Check this if the inspection type relies on completion status/checkmarks rather than a raw percentage score."
-            )
-            score = st.number_input(
-                "Recorded Performance Score (%)", 
-                min_value=0.0, max_value=100.0, value=100.0, step=1.0,
-                disabled=is_complete_only
-            )
-            
-        notes = st.text_area("Observations & Notes", placeholder="Type details or observations here...")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.form_submit_button("Submit Entry to Database", type="primary"):
-            final_score = 100.0 if is_complete_only else score
-            completion_tag = "[COMPLETE]" if is_complete_only else f"[{score}%]"
-            
-            new_row = pd.DataFrame([{
-                "Date": str(audit_date),
-                "Auditor": auditor,
-                "Area": area,
-                "Type": audit_type,
-                "Score": final_score,
-                "Notes": f"{completion_tag} {notes} (Logged securely by profile: {st.session_state.auth_user_email})"
-            }])
-            user_data = pd.concat([user_data, new_row], ignore_index=True)
-            save_user_data(user_data)
-            st.success("✅ Audit logged securely into ledger file database!")
-
-elif page == "📁 Excel Viewer":
-    st.header("Spreadsheet Tab Visualizer")
-    sheet = st.selectbox("Choose Sheet Tab to View", xls.sheet_names)
-    st.dataframe(pd.read_excel(excel_file, sheet_name=sheet), use_container_width=True)
-
-elif page == "👥 Names":
-    st.header("Verified Clean Auditor Registry")
-    st.write(f"Total Unique Filtered Personnel Names Extracted: **{len(name_list)}**")
-    name_df = pd.DataFrame
+                help="Check this if the inspection type relies on completion status/check
