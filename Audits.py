@@ -10,9 +10,18 @@ st.set_page_config(layout="wide")
 
 st.title("Audit Management System")
 
-# Load Excel file
 excel_file = "Audit Schedule - Internal - LPA.xlsx"
+
+if not os.path.exists(excel_file):
+    st.error("❌ Excel file not found")
+    st.write("Files in folder:", os.listdir())
+    st.stop()
+
 xls = pd.ExcelFile(excel_file)
+
+st.success("✅ File loaded")
+st.write("Sheets:", xls.sheet_names)
+
 
 # Sidebar navigation
 page = st.sidebar.radio(
