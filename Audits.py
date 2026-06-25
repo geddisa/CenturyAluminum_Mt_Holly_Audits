@@ -9,7 +9,6 @@ import hashlib
 # -----------------------------
 st.set_page_config(layout="wide", page_title="Century Aluminum - EHSQ Auditing Platform")
 
-# Injecting modern web-app component styles (Overrides spreadsheet look with card components)
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1.5rem; }
@@ -18,7 +17,6 @@ st.markdown("""
     h1, h2, h3 { color: #0F172A; font-family: 'Inter', system-ui, sans-serif; font-weight: 600; }
     .login-box { padding: 2.5rem; border-radius: 12px; border: 1px solid #E2E8F0; background-color: #FFFFFF; max-width: 480px; margin: 4rem auto; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.05); }
     .metric-card { background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 1.25rem; border-radius: 10px; text-align: center; }
-    .audit-badge { background-color: #EFF6FF; color: #1E40AF; padding: 0.35rem 0.75rem; border-radius: 9999px; font-weight: 600; font-size: 0.85rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -114,7 +112,10 @@ if not st.session_state.authenticated:
 # -----------------------------
 # 📊 AUTOMATED PARSING ENGINE (Schedules to Chart Objects)
 # -----------------------------
-excel_file = "Audit Schedule - Internal - LPA.xlsx"
+# Verbatim targeting config as requested
+primary_file = "Audit Schedule - Internal - LPA_2.xlsx"
+fallback_file = "Audit Schedule - Internal - LPA.xlsx"
+excel_file = primary_file if os.path.exists(primary_file) else fallback_file
 
 @st.cache_data
 def load_and_transform_schedule(file_path):
@@ -125,40 +126,51 @@ def load_and_transform_schedule(file_path):
     all_records = []
     auditors_found = set()
     
-    # Specific layout tab-parsers mapping spreadsheet formats into web metrics
+    # Non-human keyword blacklist to filter dirty text records out completely
+    system_blacklist = {
+        "week", "sheet", "audit", "shift", "score", "nan", "ppe", "loto", 
+        "total", "average", "target", "date", "dept", "department", "mobile", 
+        "equipment", "hk", "score", "operational", "summary", "status", "scheduled"
+    }
+    
     for sheet in xls.sheet_names:
         if sheet in ["Jobs and shifts", "Sheet1"]:
             continue
         try:
             df = pd.read_excel(file_path, sheet_name=sheet)
             for _, row in df.iterrows():
-                if row.dropna().empty: continue
+                if row.dropna().empty: 
+                    continue
                 
                 raw_name = str(row.iloc[0]).strip()
+                
+                # Clean up Last, First formats into standard First Last human name layouts
                 if ',' in raw_name:
                     p = raw_name.split(',')
                     raw_name = f"{p[1].strip()} {p[0].strip()}"
                 
-                if any(k in raw_name.lower() for k in ["week", "sheet", "audit", "shift", "score", "nan", "ppe", "loto"]):
+                # Strict Human-Name Validation Filters:
+                # 1. Eliminate pure numbers/codes
+                # 2. Eliminate system strings in the blacklist
+                # 3. Ensure it looks like a realistic name component string length
+                if any(k in raw_name.lower() for k in system_blacklist) or raw_name.isdigit() or len(raw_name) < 3:
                     continue
                 
-                if len(raw_name) > 2 and not raw_name.isdigit():
-                    auditors_found.add(raw_name)
-                    
-                    # Transform standard structural tracking indicators safely
-                    for val in row.iloc[2:]:
-                        v_str = str(val).strip().upper()
-                        if v_str in ['C', 'X', '100', '88.89', '90', '95', '75', '86', '96', '64'] or any(char.isdigit() for char in v_str):
-                            score_out = "100%" if v_str in ['C', 'X', 'COMPLETE'] else (f"{v_str}%" if "%" not in v_str else v_str)
-                            area_out = str(row.iloc[1]) if len(str(row.iloc[1])) > 3 else "General Facility Floor"
-                            
-                            all_records.append({
-                                "Target Period": "Spreadsheet Baseline Schedule",
-                                "Auditor": raw_name,
-                                "Operational Area": area_out,
-                                "Classification Type": sheet,
-                                "Current Status / Score": score_out,
-                            })
+                auditors_found.add(raw_name)
+                
+                for val in row.iloc[2:]:
+                    v_str = str(val).strip().upper()
+                    if v_str in ['C', 'X', '100', '88.89', '90', '95', '75', '86', '96', '64'] or any(char.isdigit() for char in v_str):
+                        score_out = "100%" if v_str in ['C', 'X', 'COMPLETE'] else (f"{v_str}%" if "%" not in v_str else v_str)
+                        area_out = str(row.iloc[1]) if len(str(row.iloc[1])) > 3 else "General Facility Floor"
+                        
+                        all_records.append({
+                            "Target Period": "Spreadsheet Baseline Schedule",
+                            "Auditor": raw_name,
+                            "Operational Area": area_out,
+                            "Classification Type": sheet,
+                            "Current Status / Score": score_out,
+                        })
         except:
             pass
     return pd.DataFrame(all_records), sorted(list(auditors_found))
@@ -175,7 +187,6 @@ if os.path.exists("audit_data.csv"):
 else:
     live_records = pd.DataFrame(columns=["Target Period", "Auditor", "Operational Area", "Classification Type", "Current Status / Score"])
 
-# Merge data streams seamlessly
 combined_dataset = pd.concat([live_records, excel_records], ignore_index=True) if not excel_records.empty else live_records
 
 # -----------------------------
@@ -198,7 +209,6 @@ if view_mode == "📊 Executive Chart Dashboard":
     st.markdown("Interactive performance overview compiled directly from live operational sheets.")
     st.markdown("---")
     
-    # 🌟 METRICS HEADER TILES
     total_audits = len(combined_dataset)
     unique_types = combined_dataset["Classification Type"].nunique() if total_audits > 0 else 0
     
@@ -226,7 +236,6 @@ if view_mode == "📊 Executive Chart Dashboard":
         
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 📈 PERFORMANCE METRIC CHART
     if total_audits > 0:
         st.subheader("📈 Category Performance & Compliance Benchmarks")
         chart_prep = combined_dataset.copy()
@@ -235,7 +244,6 @@ if view_mode == "📊 Executive Chart Dashboard":
         chart_data.columns = ["Audit Classification Type", "Compliance Score Rating (%)"]
         st.bar_chart(data=chart_data, x="Audit Classification Type", y="Compliance Score Rating (%)", use_container_width=True)
         
-    # 🗂️ CLEAN CATEGORIZED TABS (Instead of big messy rows)
     st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("📋 Dynamic Data Classification Ledger")
     
@@ -262,7 +270,7 @@ elif view_mode == "📋 Direct Entry Log":
     with st.form("web_entry_form", clear_on_submit=True):
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            in_auditor = st.selectbox("Select Certified Auditor Name", parsed_names)
+            in_auditor = st.selectbox("Select Certified Auditor Name (Strict Human Filtered)", parsed_names)
             in_area = st.selectbox("Target Plant Boundary / Area", ["Maintenance Area", "Carbon Floor", "Cast House", "Potline Grid", "Environmental Management"])
             in_date = st.date_input("Audit Action Execution Date", value=date.today())
         with col_f2:
