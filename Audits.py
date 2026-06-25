@@ -146,7 +146,6 @@ def get_clean_auditor_names(file_path):
     xls = pd.ExcelFile(file_path)
     discovered_names = set()
     
-    # Specific keywords and strings to skip from data tables
     EXCLUDE_KEYWORDS = {
         "week", "sheet", "audit", "shift", "room", "bake", "casting", "fabrication", 
         "compressor", "hot side", "cold side", "east", "west", "baghouse", "tank", 
@@ -168,16 +167,13 @@ def get_clean_auditor_names(file_path):
                     if not cell_str or any(k in cell_str.lower() for k in EXCLUDE_KEYWORDS):
                         continue
                     
-                    # Scenario A: Last, First formatting (e.g., "Adams, Kenneth")
                     if ',' in cell_str:
                         parts = [p.strip() for p in cell_str.split(',')]
                         if len(parts) == 2:
-                            # Clean up nick-names in parentheses if present
                             first_name = re.sub(r'\(.*?\)', '', parts[1]).strip()
                             last_name = parts[0].strip()
                             cell_str = f"{first_name} {last_name}"
                     
-                    # Verify string has a First and Last name token layout 
                     words = cell_str.split()
                     if len(words) >= 2 and words[0][0].isupper() and words[1][0].isupper() and len(cell_str) < 30:
                         discovered_names.add(cell_str)
@@ -230,7 +226,6 @@ if page == "📊 Dashboard":
     
     if not user_data.empty:
         try:
-            # Handle mixed datatypes gracefully if N/A flags exist
             numeric_scores = pd.to_numeric(user_data['Score'], errors='coerce')
             avg_score = round(numeric_scores.mean(), 1) if not numeric_scores.dropna().empty else 100.0
         except:
@@ -253,4 +248,93 @@ if page == "📊 Dashboard":
         
         st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
         st.subheader("🗑️ Record Management Panel")
-        st.markdown("Select a targeted
+        st.markdown("Select a targeted layout entry row index below to permanently scrub it from the storage layer.")
+        
+        del_col1, del_col2 = st.columns([2, 1])
+        with del_col1:
+            row_to_delete = st.selectbox(
+                "Select Row ID to Delete", 
+                options=list(user_data.index),
+                format_func=lambda idx: f"Row {idx} — {user_data.loc[idx, 'Auditor']} | {user_data.loc[idx, 'Area']} ({user_data.loc[idx, 'Type']})"
+            )
+        with del_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Delete Selected Audit Entry", type="primary", use_container_width=True):
+                user_data = user_data.drop(row_to_delete).reset_index(drop=True)
+                save_user_data(user_data)
+                st.success(f"Record successfully deleted.")
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("The internal database ledger is currently empty. Submit a log sheet entry in 'Enter Audit' to populate records.")
+
+elif page == "📋 Enter Audit":
+    st.header("Enter New Audit Sheet Records")
+
+    with st.form("audit_form", clear_on_submit=True):
+        f_col1, f_col2 = st.columns(2)
+        with f_col1:
+            auditor = st.selectbox("Select Auditor Name", name_list)
+            area = st.selectbox("Plant Operational Area", ["Maintenance", "Carbon", "Cast House", "Potline", "Environmental"])
+            audit_date = st.date_input("Audit Execution Date", value=date.today())
+        with f_col2:
+            audit_type = st.selectbox("Audit Type Classification", ["LPA", "Safe Observation", "PPE", "LOTO", "Mobile Equipment", "HK Score"])
+            
+            is_complete_only = st.checkbox(
+                "Mark Audit as Complete (Score not required / observations only)", 
+                help="Check this if the inspection type relies on completion status/checkmarks rather than a raw percentage score."
+            )
+            
+            score = st.number_input(
+                "Recorded Performance Score (%)", 
+                min_value=0.0, max_value=100.0, 
+                value=0.0 if is_complete_only else 100.0, 
+                step=1.0,
+                disabled=is_complete_only,
+                help="Unavailable when 'Mark Audit as Complete' is active." if is_complete_only else None
+            )
+            
+        notes = st.text_area("Observations & Notes", placeholder="Type details or observations here...")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.form_submit_button("Submit Entry to Database", type="primary"):
+            final_score = "N/A" if is_complete_only else score
+            completion_tag = "[COMPLETE]" if is_complete_only else f"[{score}%]"
+            
+            new_row = pd.DataFrame([{
+                "Date": str(audit_date),
+                "Auditor": auditor,
+                "Area": area,
+                "Type": audit_type,
+                "Score": final_score,
+                "Notes": f"{completion_tag} {notes} (Logged securely by profile: {st.session_state.auth_user_email})"
+            }])
+            user_data = pd.concat([user_data, new_row], ignore_index=True)
+            save_user_data(user_data)
+            st.success("✅ Audit logged securely into ledger file database!")
+
+elif page == "📁 Excel Viewer":
+    st.header("Spreadsheet Tab Visualizer")
+    xls_viewer = pd.ExcelFile(excel_file)
+    sheet = st.selectbox("Choose Sheet Tab to View", xls_viewer.sheet_names)
+    st.dataframe(pd.read_excel(excel_file, sheet_name=sheet), use_container_width=True)
+
+elif page == "👥 Names":
+    st.header("Verified Clean Auditor Registry")
+    st.write(f"Total Unique Filtered Personnel Names Extracted: **{len(name_list)}**")
+    name_df = pd.DataFrame(name_list, columns=["Employee Name Listing"])
+    st.dataframe(name_df, use_container_width=True)
+
+# -----------------------------
+# ⚠️ UNIFIED SYSTEM RESET AREA
+# -----------------------------
+if page == "📊 Dashboard":
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    with st.expander("🚨 Advanced Administrative System Wiping"):
+        st.warning("Warning: Clicking the button below wipes all manual records entered up to this second.")
+        if st.button("Reset Entire CSV Local Database Layer"):
+            if os.path.exists("audit_data.csv"):
+                os.remove("audit_data.csv")
+            st.cache_data.clear()
+            st.success("Database wiped successfully. Reloading system...")
+            st.rerun()
