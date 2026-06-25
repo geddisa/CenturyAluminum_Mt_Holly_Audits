@@ -138,7 +138,7 @@ if not st.session_state.authenticated:
 excel_file = "Audit Schedule - Internal - LPA.xlsx"
 
 if not os.path.exists(excel_file):
-    st.error("❌ System Critical Error: Source Excel layout schedule template file not found.")
+    st.error("❌ System Critical Error: Source Excel file not found.")
     st.stop()
 
 xls = pd.ExcelFile(excel_file)
@@ -146,7 +146,7 @@ xls = pd.ExcelFile(excel_file)
 all_names = set()
 COMMON_NON_NAMES = ["Room", "West", "East", "Side", "Shop", "Tank", "Tanks", "Mill", "House", "Area", "Café", "Snacks", "Shift", "Job", "Details"]
 
-# Dynamic generation loops to pull employee listings straight out of spreadsheet sheets
+# Extracting personnel listings from the master sheets
 for sheet in xls.sheet_names:
     if sheet in ["Jobs and shifts", "Sheet1"]:
         continue
@@ -155,7 +155,6 @@ for sheet in xls.sheet_names:
         for row in df_temp.itertuples(index=False):
             if len(row) > 0 and pd.notna(row[0]):
                 name_str = str(row[0]).strip().replace('"', '')
-                # Re-format "Last Name, First Name" strings to unified "First Last" presentation layouts
                 if ',' in name_str:
                     parts = [p.strip() for p in name_str.split(',')]
                     if len(parts) == 2:
@@ -168,7 +167,6 @@ for sheet in xls.sheet_names:
 
 name_list = sorted(list(all_names))
 
-# Fallback failsafe if parsing yields zero results
 if not name_list:
     name_list = ["Freddie Gamble", "Anthony Wall", "Tim Kass", "Bryan Profit", "Reggie Coleman", "Miguel Frias"]
 
@@ -211,7 +209,7 @@ if page == "📊 Dashboard":
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Records Loaded", f"{len(user_data):,}")
     col2.metric("Overall System Rating", f"{round(user_data['Score'].mean(), 1)}%" if not user_data['Score'].empty else "100.0%")
-    col3.metric("Monitored Zones Active", user_data["Area"].nunique() if not user_data.empty else "8")
+    col3.metric("Monitored Zones Active", user_data["Area"].nunique() if not user_data.empty else "5")
     
     st.markdown("---")
     st.subheader("📋 Historical Consolidated Data Ledger")
@@ -221,9 +219,11 @@ elif page == "📋 Enter Audit":
     st.header("Enter New Audit Sheet Records")
 
     with st.form("audit_form", clear_on_submit=True):
-        # 👥 Here the employee names list dynamically builds selectbox options
         auditor = st.selectbox("Select Auditor Name", name_list)
-        area = st.selectbox("Plant Operational Area", ["Maintenance", "Carbon", "Cast House", "Potline", "Environmental", "Green Mill", "Coke Tank", "Rod Shop"])
+        
+        # 🏢 Streamlined back to only true plant operational core areas
+        area = st.selectbox("Plant Operational Area", ["Maintenance", "Carbon", "Cast House", "Potline", "Environmental"])
+        
         audit_type = st.selectbox("Audit Type Classification", ["LPA", "Safe Observation", "PPE", "LOTO", "Mobile Equipment", "HK Score"])
         score = st.number_input("Recorded Performance Score (%)", 0.0, 100.0, step=1.0)
         audit_date = st.date_input("Audit Execution Date", value=date.today())
