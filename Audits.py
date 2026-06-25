@@ -32,7 +32,6 @@ def load_users():
     if os.path.exists(DB_FILE):
         return pd.read_csv(DB_FILE).set_index("email").to_dict(orient="index")
     else:
-        # Create a default administrator entry on initial initialization
         default_users = {
             "admin@centuryaluminum.com": {
                 "name": "System Administrator",
@@ -56,7 +55,6 @@ def save_new_user(email, name, password):
     new_row.to_csv(DB_FILE, mode='a', header=not os.path.exists(DB_FILE), index=False)
     return True
 
-# Initialize application session state markers
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "auth_user_email" not in st.session_state:
@@ -130,7 +128,7 @@ if not st.session_state.authenticated:
                         st.error("❌ Database conflict occurred.")
             st.markdown('</div>', unsafe_allow_html=True)
 
-    st.stop()  # Lock rest of code execution until authenticated successfully
+    st.stop()
 
 # -----------------------------
 # 👥 MASTER EMPLOYEE NAME REGISTRY PARSER
@@ -146,7 +144,6 @@ xls = pd.ExcelFile(excel_file)
 all_names = set()
 COMMON_NON_NAMES = ["Room", "West", "East", "Side", "Shop", "Tank", "Tanks", "Mill", "House", "Area", "Café", "Snacks", "Shift", "Job", "Details"]
 
-# Extracting personnel listings from the master sheets
 for sheet in xls.sheet_names:
     if sheet in ["Jobs and shifts", "Sheet1"]:
         continue
@@ -220,23 +217,37 @@ elif page == "📋 Enter Audit":
 
     with st.form("audit_form", clear_on_submit=True):
         auditor = st.selectbox("Select Auditor Name", name_list)
-        
-        # 🏢 Streamlined back to only true plant operational core areas
         area = st.selectbox("Plant Operational Area", ["Maintenance", "Carbon", "Cast House", "Potline", "Environmental"])
-        
         audit_type = st.selectbox("Audit Type Classification", ["LPA", "Safe Observation", "PPE", "LOTO", "Mobile Equipment", "HK Score"])
-        score = st.number_input("Recorded Performance Score (%)", 0.0, 100.0, step=1.0)
+        
+        # 🟢 NEW feature: Mark complete without needing a numerical pass/fail score
+        is_complete_only = st.checkbox(
+            "Mark Audit as Complete (Score not required / observations only)", 
+            help="Check this if the inspection type relies on completion status/checkmarks rather than a raw percentage score."
+        )
+        
+        # Conditionally disable score input if marked complete only
+        score = st.number_input(
+            "Recorded Performance Score (%)", 
+            min_value=0.0, max_value=100.0, value=100.0, step=1.0,
+            disabled=is_complete_only
+        )
+        
         audit_date = st.date_input("Audit Execution Date", value=date.today())
         notes = st.text_area("Observations & Notes")
 
         if st.form_submit_button("Submit Entry to Database"):
+            # Set internal values based on completion checkbox selection
+            final_score = 100.0 if is_complete_only else score
+            completion_tag = "[COMPLETE]" if is_complete_only else f"[{score}%]"
+            
             new_row = pd.DataFrame([{
                 "Date": pd.to_datetime(audit_date),
                 "Auditor": auditor,
                 "Area": area,
                 "Type": audit_type,
-                "Score": score,
-                "Notes": f"{notes} (Logged securely by profile: {st.session_state.auth_user_email})"
+                "Score": final_score,
+                "Notes": f"{completion_tag} {notes} (Logged securely by profile: {st.session_state.auth_user_email})"
             }])
             user_data = pd.concat([user_data, new_row], ignore_index=True)
             save_user_data(user_data)
