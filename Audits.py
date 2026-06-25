@@ -215,7 +215,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### 🏢 Facility Management")
 page = st.sidebar.radio(
     "Navigation Options",
-    ["📊 Dashboard", "📋 Enter Audit"],
+    ["📊 Dashboard", "📋 Enter Audit", "📁 Excel Viewer", "👥 Names"],
     key="main_navigation_radio"
 )
 
@@ -230,7 +230,9 @@ if page == "📊 Dashboard":
     
     if not user_data.empty:
         try:
-            avg_score = round(pd.to_numeric(user_data['Score']).mean(), 1)
+            # Handle mixed datatypes gracefully if N/A flags exist
+            numeric_scores = pd.to_numeric(user_data['Score'], errors='coerce')
+            avg_score = round(numeric_scores.mean(), 1) if not numeric_scores.dropna().empty else 100.0
         except:
             avg_score = 100.0
         active_zones = user_data["Area"].nunique()
@@ -251,78 +253,4 @@ if page == "📊 Dashboard":
         
         st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
         st.subheader("🗑️ Record Management Panel")
-        st.markdown("Select a targeted layout entry row index below to permanently scrub it from the storage layer.")
-        
-        del_col1, del_col2 = st.columns([2, 1])
-        with del_col1:
-            row_to_delete = st.selectbox(
-                "Select Row ID to Delete", 
-                options=list(user_data.index),
-                format_func=lambda idx: f"Row {idx} — {user_data.loc[idx, 'Auditor']} | {user_data.loc[idx, 'Area']} ({user_data.loc[idx, 'Type']})"
-            )
-        with del_col2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Delete Selected Audit Entry", type="primary", use_container_width=True):
-                user_data = user_data.drop(row_to_delete).reset_index(drop=True)
-                save_user_data(user_data)
-                st.success(f"Record successfully deleted.")
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        st.info("The internal database ledger is currently empty. Submit a log sheet entry in 'Enter Audit' to populate records.")
-
-elif page == "📋 Enter Audit":
-    st.header("Enter New Audit Sheet Records")
-
-    with st.form("audit_form", clear_on_submit=True):
-        f_col1, f_col2 = st.columns(2)
-        with f_col1:
-            auditor = st.selectbox("Select Auditor Name", name_list)
-            area = st.selectbox("Plant Operational Area", ["Maintenance", "Carbon", "Cast House", "Potline", "Environmental"])
-            audit_date = st.date_input("Audit Execution Date", value=date.today())
-        with f_col2:
-            audit_type = st.selectbox("Audit Type Classification", ["LPA", "Safe Observation", "PPE", "LOTO", "Mobile Equipment", "HK Score"])
-            
-            is_complete_only = st.checkbox(
-                "Mark Audit as Complete (Score not required / observations only)", 
-                help="Check this if the inspection type relies on completion status/checkmarks rather than a raw percentage score."
-            )
-            score = st.number_input(
-                "Recorded Performance Score (%)", 
-                min_value=0.0, max_value=100.0, value=100.0, step=1.0,
-                disabled=is_complete_only
-            )
-            
-        notes = st.text_area("Observations & Notes", placeholder="Type details or observations here...")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.form_submit_button("Submit Entry to Database", type="primary"):
-            final_score = 100.0 if is_complete_only else score
-            completion_tag = "[COMPLETE]" if is_complete_only else f"[{score}%]"
-            
-            new_row = pd.DataFrame([{
-                "Date": str(audit_date),
-                "Auditor": auditor,
-                "Area": area,
-                "Type": audit_type,
-                "Score": final_score,
-                "Notes": f"{completion_tag} {notes} (Logged securely by profile: {st.session_state.auth_user_email})"
-            }])
-            user_data = pd.concat([user_data, new_row], ignore_index=True)
-            save_user_data(user_data)
-            st.success("✅ Audit logged securely into ledger file database!")
-
-
-# -----------------------------
-# ⚠️ UNIFIED SYSTEM RESET AREA
-# -----------------------------
-if page == "📊 Dashboard":
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    with st.expander("🚨 Advanced Administrative System Wiping"):
-        st.warning("Warning: Clicking the button below wipes all manual records entered up to this second.")
-        if st.button("Reset Entire CSV Local Database Layer"):
-            if os.path.exists("audit_data.csv"):
-                os.remove("audit_data.csv")
-            st.cache_data.clear()
-            st.success("Database wiped successfully. Reloading system...")
-            st.rerun()
+        st.markdown("Select a targeted
