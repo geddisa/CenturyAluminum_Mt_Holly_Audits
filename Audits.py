@@ -215,7 +215,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### 🏢 Facility Management")
 page = st.sidebar.radio(
     "Navigation Options",
-    ["📊 Dashboard", "📋 Enter Audit", "📁 Excel Viewer", "👥 Names"],
+    ["📊 Dashboard", "📋 Enter Audit"],
     key="main_navigation_radio"
 )
 
