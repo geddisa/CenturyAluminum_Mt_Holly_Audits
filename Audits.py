@@ -1,8 +1,3 @@
-Here is the final, correct, and fully cleaned code.
-
-Those specific non-person strings (`CH Laboratory`, `CH Maintenance Area`, `CH Shipping/Scales`, `MOBILE EQUIP`, etc.) have been completely removed from your auditor dropdown list by adding them to the exclusion filters.
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -362,5 +357,3 @@ if page == "📊 Dashboard":
             st.cache_data.clear()
             st.success("Database wiped successfully. Reloading system...")
             st.rerun()
-
-```
