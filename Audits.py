@@ -128,7 +128,7 @@ def load_and_transform_schedule(file_path):
     system_blacklist = {
         "week", "sheet", "audit", "shift", "score", "nan", "ppe", "loto", 
         "total", "average", "target", "date", "dept", "department", "mobile", 
-        "equipment", "hk", "score", "operational", "summary", "status", "scheduled", "area"
+        "equipment", "hk", "score", "operational", "summary", "status", "scheduled", "area", "vacation"
     }
     
     for sheet in xls.sheet_names:
@@ -142,10 +142,19 @@ def load_and_transform_schedule(file_path):
                 if row.dropna().empty: 
                     continue
                 
-                # Dynamic timestamp checking 
-                first_cell_val = str(row.iloc[1]).strip()
-                if "2026-" in first_cell_val:
-                    current_active_date = first_cell_val.split(" ")[0]
+                # Dynamic timestamp/date row detection to ensure every shifting date marker is preserved
+                row_str_combined = " ".join([str(val).strip() for val in row.values if pd.notna(val)])
+                
+                # Matches patterns like '2026-02-01' or date ranges like '3/2/26 - 3/6/26'
+                if "2026-" in row_str_combined or "/26" in row_str_combined:
+                    for val in row.values:
+                        val_s = str(val).strip()
+                        if "2026-" in val_s:
+                            current_active_date = val_s.split(" ")[0]
+                            break
+                        elif "/26" in val_s:
+                            current_active_date = val_s
+                            break
                     continue
                 
                 # Keep names exactly as they are listed in the sheet verbatim
@@ -181,7 +190,7 @@ excel_records, parsed_names = load_and_transform_schedule(excel_file)
 if not parsed_names:
     parsed_names = ["Freddie Gamble", "Anthony Wall", "Tim Kass", "Bryan Profit", "Reggie Coleman", "Miguel Frias"]
 
-# Load up persistent web inputs 
+# Load persistent user data inputs
 if os.path.exists("audit_data.csv"):
     live_records = pd.read_csv("audit_data.csv")
     live_records.columns = ["Scheduled Target Date", "Auditor Name", "Department/Area", "Classification Type", "Current Assignment / Status"]
@@ -238,7 +247,7 @@ if view_mode == "📊 Executive Chart Dashboard":
         display_filter_df = display_filter_df[display_filter_df["Classification Type"] == selected_tab_category]
         
     if not display_filter_df.empty:
-        st.dataframe(display_filter_df[["Scheduled Target Date", "Auditor Name", "Department/Area", "Classification Type", "Current Assignment / Status"]], use_container_width=True, height=400)
+        st.dataframe(display_filter_df[["Scheduled Target Date", "Auditor Name", "Department/Area", "Classification Type", "Current Assignment / Status"]], use_container_width=True, height=500)
     else:
         st.info("No tracked audits recorded in this category yet.")
 
