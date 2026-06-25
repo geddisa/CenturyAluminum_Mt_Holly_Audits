@@ -169,4 +169,123 @@ if not parsed_names:
     parsed_names = ["Anthony Wall", "Art DiFilippo", "Brett Meyer", "Brian Weatherford", "Bryan Profit", "Freddie Gamble", "Tim Kass"]
 
 # Load up persistent web inputs 
-if os.path.exists("
+if os.path.exists("audit_data.csv"):
+    live_records = pd.read_csv("audit_data.csv")
+    live_records.columns = ["Target Period", "Auditor", "Operational Area", "Classification Type", "Current Status / Score"]
+else:
+    live_records = pd.DataFrame(columns=["Target Period", "Auditor", "Operational Area", "Classification Type", "Current Status / Score"])
+
+# Merge data streams seamlessly
+combined_dataset = pd.concat([live_records, excel_records], ignore_index=True) if not excel_records.empty else live_records
+
+# -----------------------------
+# SIDE PANEL USER SYSTEM NAVIGATION
+# -----------------------------
+st.sidebar.markdown(f"**Logged In As:**\n💡 **{st.session_state.auth_user_name}**\n`{st.session_state.auth_user_email}`")
+if st.sidebar.button("Logout of Session", use_container_width=True):
+    st.session_state.authenticated = False
+    st.rerun()
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🗺️ Navigation Hub")
+view_mode = st.sidebar.radio("Go To View:", ["📊 Executive Chart Dashboard", "📋 Direct Entry Log"])
+
+# -----------------------------
+# VIEW A: CHARTS & METRIC GRIDS LAYOUT
+# -----------------------------
+if view_mode == "📊 Executive Chart Dashboard":
+    st.title("Century Aluminum Corporate Audit Hub")
+    st.markdown("Interactive performance overview compiled directly from live operational sheets.")
+    st.markdown("---")
+    
+    # 🌟 METRICS HEADER TILES
+    total_audits = len(combined_dataset)
+    unique_types = combined_dataset["Classification Type"].nunique() if total_audits > 0 else 0
+    
+    def calculate_numeric_avg(df):
+        if df.empty: return 100.0
+        scores = []
+        for s in df["Current Status / Score"]:
+            s_clean = str(s).replace('%', '').strip().upper()
+            if s_clean in ['C', 'X', 'COMPLETE', 'N/A', '']:
+                scores.append(100.0)
+            else:
+                try: scores.append(float(s_clean))
+                except: scores.append(100.0)
+        return round(sum(scores) / len(scores), 1) if scores else 100.0
+
+    system_compliance = calculate_numeric_avg(combined_dataset)
+    
+    m_col1, m_col2, m_col3 = st.columns(3)
+    with m_col1:
+        st.markdown(f'<div class="metric-card">📋 <span style="color:#64748B;">Total Records Unified</span><h3>{total_audits:,}</h3></div>', unsafe_allow_html=True)
+    with m_col2:
+        st.markdown(f'<div class="metric-card">🎯 <span style="color:#64748B;">Compliance System Average</span><h3>{system_compliance}%</h3></div>', unsafe_allow_html=True)
+    with m_col3:
+        st.markdown(f'<div class="metric-card">🏗️ <span style="color:#64748B;">Monitored Categories</span><h3>{unique_types}</h3></div>', unsafe_allow_html=True)
+        
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 📈 PERFORMANCE METRIC CHART
+    if total_audits > 0:
+        st.subheader("📈 Category Performance & Compliance Benchmarks")
+        chart_prep = combined_dataset.copy()
+        chart_prep["Score_Numeric"] = [float(str(s).replace('%','').strip()) if str(s).replace('%','').strip().replace('.','',1).isdigit() else 100.0 for s in chart_prep["Current Status / Score"]]
+        chart_data = chart_prep.groupby("Classification Type")["Score_Numeric"].mean().reset_index()
+        chart_data.columns = ["Audit Classification Type", "Compliance Score Rating (%)"]
+        st.bar_chart(data=chart_data, x="Audit Classification Type", y="Compliance Score Rating (%)", use_container_width=True)
+        
+    # 🗂️ CLEAN CATEGORIZED TABS (Instead of big messy rows)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📋 Dynamic Data Classification Ledger")
+    
+    all_categories = list(combined_dataset["Classification Type"].unique()) if total_audits > 0 else ["No Active Logs Found"]
+    selected_tab_category = st.selectbox("Select Classification View Framework:", ["View All Unified Rows"] + all_categories)
+    
+    display_filter_df = combined_dataset.copy()
+    if selected_tab_category != "View All Unified Rows":
+        display_filter_df = display_filter_df[display_filter_df["Classification Type"] == selected_tab_category]
+        
+    if not display_filter_df.empty:
+        st.dataframe(display_filter_df, use_container_width=True, height=380)
+    else:
+        st.info("No tracked audits recorded in this category yet.")
+
+# -----------------------------
+# VIEW B: USER ENTRY WEB INTERFACE
+# -----------------------------
+elif view_mode == "📋 Direct Entry Log":
+    st.title("Log Completed Safety Actions")
+    st.markdown("Bypass complicated spreadsheet cells completely by executing data inputs below.")
+    st.markdown("---")
+    
+    with st.form("web_entry_form", clear_on_submit=True):
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            in_auditor = st.selectbox("Select Certified Auditor Name", parsed_names)
+            in_area = st.selectbox("Target Plant Boundary / Area", ["Maintenance Area", "Carbon Floor", "Cast House", "Potline Grid", "Environmental Management"])
+            in_date = st.date_input("Audit Action Execution Date", value=date.today())
+        with col_f2:
+            in_type = st.selectbox("Audit Program Classification System", ["LPA", "Safe Obs - GS and EHS", "Safe Obs - Leadership", "PPE", "LOTO", "Mobile Equip", "HK Scores"])
+            is_c_flag = st.checkbox("Mark execution as Clean / 100% Complete status ('C' Flag indicator)")
+            in_score = st.number_input("If numeric evaluation, enter exact score (%)", min_value=0.0, max_value=100.0, value=100.0, step=1.0, disabled=is_c_flag)
+            
+        if st.form_submit_button("Securely Write Entry to Audit Files", type="primary"):
+            final_status_metric = "100%" if is_c_flag else f"{in_score}%"
+            new_audit_record = pd.DataFrame([{
+                "Target Period": str(in_date),
+                "Auditor": in_auditor,
+                "Operational Area": in_area,
+                "Classification Type": in_type,
+                "Current Status / Score": final_status_metric
+            }])
+            
+            if os.path.exists("audit_data.csv"):
+                base_df = pd.read_csv("audit_data.csv")
+                base_df.columns = ["Target Period", "Auditor", "Operational Area", "Classification Type", "Current Status / Score"]
+                pd.concat([base_df, new_audit_record], ignore_index=True).to_csv("audit_data.csv", index=False)
+            else:
+                new_audit_record.to_csv("audit_data.csv", index=False)
+                
+            st.success("🎉 Performance metric registered safely! Reloading active metrics engine dashboard views.")
+            st.rerun()
