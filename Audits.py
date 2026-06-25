@@ -1,6 +1,3 @@
-Here is the complete, fully updated Audits.py file with the duplicate widget tracking error resolved (via unique keys) and an upgraded, robust background data parser designed to correctly melt down the custom tracking blocks into a unified metric view for your dashboard.
-
-Python
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -154,7 +151,7 @@ st.sidebar.markdown("### 🏢 Facility Management")
 page = st.sidebar.radio(
     "Navigation Options",
     ["📊 Dashboard", "📋 Enter Audit", "📁 Excel Viewer", "👥 Names"],
-    key="main_navigation_radio"  # Explicit layout key assignment preventing duplicates error
+    key="main_navigation_radio"  # Unique key resolving duplication errors
 )
 
 # -----------------------------
