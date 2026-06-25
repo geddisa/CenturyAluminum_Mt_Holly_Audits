@@ -24,7 +24,19 @@ xls = pd.ExcelFile(excel_file)
 # -----------------------------
 all_names = set()
 
-COMMON_NON_NAMES = ["Room", "West", "East", "Side", "Shop", "Tank", "Mill"]
+# Expanded to catch words used in facility areas
+COMMON_NON_NAMES = [
+    "Room", "West", "East", "Side", "Shop", "Tank", "Tanks", "Mill", 
+    "House", "Laboratory", "Moldshop", "EQUIP", "Carbon", "Potline", 
+    "Area", "Café", "Snacks"
+]
+
+# Explicitly block exact non-person strings that managed to sneak past
+EXPLICIT_NON_NAMES = {
+    "CH Laboratory", "CH Moldshop", "Cast House", "HK Scores", 
+    "MOBILE EQUIP", "MT Carbon", "MT Potline", "Maintenance Area", 
+    "Midnight Snacks", "Monmartre Café", "Pitch Tanks"
+}
 
 for sheet in xls.sheet_names:
     df_temp = pd.read_excel(excel_file, sheet_name=sheet)
@@ -40,6 +52,7 @@ for sheet in xls.sheet_names:
                     and all(w[0].isupper() for w in words)     # capitalized
                     and all(w.isalpha() for w in words)        # letters only
                     and not any(w in COMMON_NON_NAMES for w in words)
+                    and val not in EXPLICIT_NON_NAMES          # double-check exact matches
                 ):
                     all_names.add(val)
 
