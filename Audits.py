@@ -20,17 +20,37 @@ if not os.path.exists(excel_file):
 xls = pd.ExcelFile(excel_file)
 
 st.success("✅ File loaded")
-st.write("Sheets:", xls.sheet_names)
 
+# -----------------------------
+# ✅ GET ALL NAMES FROM ALL SHEETS
+# -----------------------------
+all_names = set()
 
+for sheet in xls.sheet_names:
+    df_temp = pd.read_excel(excel_file, sheet_name=sheet)
+
+    for col in df_temp.columns:
+        for val in df_temp[col]:
+            if isinstance(val, str):
+                val = val.strip()
+
+                # simple filter (keeps names, removes junk)
+                if val and len(val.split()) >= 2:
+                    all_names.add(val)
+
+# convert to sorted list
+name_list = sorted(all_names)
+
+# -----------------------------
 # Sidebar navigation
+# -----------------------------
 page = st.sidebar.radio(
     "Navigation",
-    ["📊 Dashboard", "📋 Enter Audit", "📁 Excel Data Viewer"]
+    ["📊 Dashboard", "📋 Enter Audit", "📁 Excel Data Viewer", "👥 All Names"]
 )
 
 # -----------------------------
-# LOAD USER DATA (CSV STORAGE)
+# LOAD USER DATA
 # -----------------------------
 def load_user_data():
     if os.path.exists("audit_data.csv"):
@@ -46,44 +66,36 @@ def save_user_data(df):
 user_data = load_user_data()
 
 # -----------------------------
-# 📋 ENTER AUDIT PAGE
+# 📋 ENTER AUDIT
 # -----------------------------
 if page == "📋 Enter Audit":
     st.header("Enter New Audit")
 
     with st.form("audit_form"):
-        col1, col2 = st.columns(2)
 
-        with col1:
-            auditor = st.selectbox("Auditor", [
-                "Freddie Gamble",
-                "Anthony Wall",
-                "Tim Kass",
-                "Bryan Profit",
-                "Reggie Coleman",
-                "Miguel Frias"
-            ])
+        # ✅ dynamic names instead of hardcoded
+        auditor = st.selectbox("Auditor", name_list)
 
-            area = st.selectbox("Area", [
-                "Maintenance",
-                "Carbon",
-                "Cast House",
-                "Potline",
-                "Environmental"
-            ])
+        area = st.selectbox("Area", [
+            "Maintenance",
+            "Carbon",
+            "Cast House",
+            "Potline",
+            "Environmental"
+        ])
 
-        with col2:
-            audit_type = st.selectbox("Audit Type", [
-                "LPA",
-                "Safe Observation",
-                "PPE",
-                "LOTO",
-                "Mobile Equipment"
-            ])
+        audit_type = st.selectbox("Audit Type", [
+            "LPA",
+            "Safe Observation",
+            "PPE",
+            "LOTO",
+            "Mobile Equipment"
+        ])
 
-            score = st.number_input("Score (%)", 0.0, 100.0)
+        score = st.number_input("Score (%)", 0.0, 100.0)
 
         audit_date = st.date_input("Date", value=date.today())
+
         notes = st.text_area("Notes")
 
         submitted = st.form_submit_button("Submit")
@@ -104,15 +116,14 @@ if page == "📋 Enter Audit":
             st.success("✅ Audit Saved!")
 
 # -----------------------------
-# 📊 DASHBOARD PAGE
+# 📊 DASHBOARD
 # -----------------------------
 elif page == "📊 Dashboard":
     st.header("Audit Dashboard")
 
     if user_data.empty:
-        st.warning("No user-entered audits yet.")
+        st.warning("No audits yet.")
     else:
-        # Filters
         st.sidebar.subheader("Filters")
 
         auditor_filter = st.sidebar.selectbox(
@@ -133,42 +144,35 @@ elif page == "📊 Dashboard":
         if area_filter != "All":
             df = df[df["Area"] == area_filter]
 
-        # KPI Metrics
         col1, col2, col3 = st.columns(3)
-
         col1.metric("Total Audits", len(df))
+        col2.metric("Avg Score", round(df["Score"].mean(), 1))
+        col3.metric("Areas", df["Area"].nunique())
 
-        if "Score" in df:
-            col2.metric("Avg Score", round(df["Score"].mean(), 1))
-
-        col3.metric("Areas Covered", df["Area"].nunique())
-
-        # Charts
-        st.subheader("Performance by Auditor")
         st.bar_chart(df.groupby("Auditor")["Score"].mean())
 
-        st.subheader("Trend Over Time")
         df["Date"] = pd.to_datetime(df["Date"])
         st.line_chart(df.groupby("Date")["Score"].mean())
 
-        # Raw data
-        st.subheader("Audit Records")
         st.dataframe(df)
 
 # -----------------------------
-# 📁 EXCEL DATA VIEWER
+# 📁 EXCEL VIEWER
 # -----------------------------
 elif page == "📁 Excel Data Viewer":
-    st.header("Original Excel Data")
+    st.header("Excel Data")
 
-    selected_sheet = st.selectbox("Select Sheet", xls.sheet_names)
+    sheet = st.selectbox("Select Sheet", xls.sheet_names)
 
-    df_excel = pd.read_excel(excel_file, sheet_name=selected_sheet)
+    df_excel = pd.read_excel(excel_file, sheet_name=sheet)
 
-    st.subheader(f"Sheet: {selected_sheet}")
     st.dataframe(df_excel)
 
-    # Optional quick insights
-    if not df_excel.select_dtypes(include="number").empty:
-        st.subheader("Quick Chart")
-        st.line_chart(df_excel.select_dtypes(include="number"))
+# -----------------------------
+# 👥 ALL NAMES PAGE
+# -----------------------------
+elif page == "👥 All Names":
+    st.header("All Names Found")
+
+    st.write(f"Total: {len(name_list)}")
+    st.dataframe(pd.DataFrame(name_list, columns=["Names"]))
