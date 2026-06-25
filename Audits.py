@@ -110,7 +110,7 @@ if not st.session_state.authenticated:
     st.stop()
 
 # -----------------------------
-# 📊 AUTOMATED PARSING ENGINE (Schedules to Chart Objects)
+# 📊 AUTOMATED PARSING ENGINE
 # -----------------------------
 primary_file = "Audit Schedule - Internal - LPA_2.xlsx"
 fallback_file = "Audit Schedule - Internal - LPA.xlsx"
@@ -136,39 +136,33 @@ def load_and_transform_schedule(file_path):
             continue
         try:
             df = pd.read_excel(file_path, sheet_name=sheet, header=None)
-            
-            # Tracker variable to hold onto exact dates as we loop down the rows
             current_active_date = "Baseline 2026"
             
             for _, row in df.iterrows():
                 if row.dropna().empty: 
                     continue
                 
-                # Check if this row establishes a new exact timeline/date threshold
+                # Dynamic timestamp checking 
                 first_cell_val = str(row.iloc[1]).strip()
                 if "2026-" in first_cell_val:
-                    current_active_date = first_cell_val.split(" ")[0] # extract exact date string (YYYY-MM-DD)
+                    current_active_date = first_cell_val.split(" ")[0]
                     continue
                 
+                # Keep names exactly as they are listed in the sheet verbatim
                 raw_name = str(row.iloc[0]).strip()
                 if raw_name == "nan" or not raw_name:
                     raw_name = str(row.iloc[1]).strip()
-                    
-                if ',' in raw_name:
-                    p = raw_name.split(',')
-                    raw_name = f"{p[1].strip()} {p[0].strip()}"
                 
-                # Strict Filter Validation
                 if any(k in raw_name.lower() for k in system_blacklist) or raw_name.isdigit() or len(raw_name) < 3 or raw_name == "nan":
                     continue
                 
                 auditors_found.add(raw_name)
                 
-                # Step through individual column metrics to map specific locations/compliance marks
+                # Extract and cross-map distinct target columns natively
                 for col_idx, val in enumerate(row.iloc[2:]):
                     val_str = str(val).strip()
-                    if val_str != "nan" and len(val_str) > 1:
-                        area_out = str(row.iloc[1]) if (len(str(row.iloc[1])) > 3 and str(row.iloc[1]) != "nan") else "General Plant boundary"
+                    if val_str != "nan" and len(val_str) > 0:
+                        area_out = str(row.iloc[1]) if (len(str(row.iloc[1])) > 1 and str(row.iloc[1]) != "nan") else "General Plant boundary"
                         
                         all_records.append({
                             "Scheduled Target Date": current_active_date,
@@ -185,7 +179,7 @@ def load_and_transform_schedule(file_path):
 excel_records, parsed_names = load_and_transform_schedule(excel_file)
 
 if not parsed_names:
-    parsed_names = ["Anthony Wall", "Art DiFilippo", "Brett Meyer", "Brian Weatherford", "Bryan Profit", "Freddie Gamble", "Tim Kass"]
+    parsed_names = ["Freddie Gamble", "Anthony Wall", "Tim Kass", "Bryan Profit", "Reggie Coleman", "Miguel Frias"]
 
 # Load up persistent web inputs 
 if os.path.exists("audit_data.csv"):
@@ -244,7 +238,6 @@ if view_mode == "📊 Executive Chart Dashboard":
         display_filter_df = display_filter_df[display_filter_df["Classification Type"] == selected_tab_category]
         
     if not display_filter_df.empty:
-        # Columns explicitly display 'Scheduled Target Date' and 'Auditor Name' clearly up front
         st.dataframe(display_filter_df[["Scheduled Target Date", "Auditor Name", "Department/Area", "Classification Type", "Current Assignment / Status"]], use_container_width=True, height=400)
     else:
         st.info("No tracked audits recorded in this category yet.")
@@ -261,7 +254,7 @@ elif view_mode == "📋 Direct Entry Log":
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             in_auditor = st.selectbox("Select Certified Auditor Name", parsed_names)
-            in_area = st.selectbox("Target Plant Boundary / Area", ["Maintenance Area", "Carbon Floor", "Cast House", "Potline Grid", "Environmental Management"])
+            in_area = st.text_input("Department / Area Name", placeholder="e.g., Maintenance, Carbon, Cast House")
             in_date = st.date_input("Exact Execution Date", value=date.today())
         with col_f2:
             in_type = st.selectbox("Audit Program Classification System", ["LPA", "Safe Obs - GS and EHS", "Safe Obs - Leadership", "PPE", "LOTO", "Mobile Equip", "HK Scores"])
@@ -271,7 +264,7 @@ elif view_mode == "📋 Direct Entry Log":
             new_audit_record = pd.DataFrame([{
                 "Scheduled Target Date": str(in_date),
                 "Auditor Name": in_auditor,
-                "Department/Area": in_area,
+                "Department/Area": in_area if in_area.strip() else "General Plant boundary",
                 "Classification Type": in_type,
                 "Current Assignment / Status": in_status if in_status.strip() else "Complete"
             }])
