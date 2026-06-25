@@ -112,7 +112,6 @@ if not st.session_state.authenticated:
 # -----------------------------
 # 📊 AUTOMATED PARSING ENGINE (Schedules to Chart Objects)
 # -----------------------------
-# Verbatim targeting config as requested
 primary_file = "Audit Schedule - Internal - LPA_2.xlsx"
 fallback_file = "Audit Schedule - Internal - LPA.xlsx"
 excel_file = primary_file if os.path.exists(primary_file) else fallback_file
@@ -126,53 +125,61 @@ def load_and_transform_schedule(file_path):
     all_records = []
     auditors_found = set()
     
-    # Non-human keyword blacklist to filter dirty text records out completely
     system_blacklist = {
         "week", "sheet", "audit", "shift", "score", "nan", "ppe", "loto", 
         "total", "average", "target", "date", "dept", "department", "mobile", 
-        "equipment", "hk", "score", "operational", "summary", "status", "scheduled"
+        "equipment", "hk", "score", "operational", "summary", "status", "scheduled", "area"
     }
     
     for sheet in xls.sheet_names:
         if sheet in ["Jobs and shifts", "Sheet1"]:
             continue
         try:
-            df = pd.read_excel(file_path, sheet_name=sheet)
+            df = pd.read_excel(file_path, sheet_name=sheet, header=None)
+            
+            # Tracker variable to hold onto exact dates as we loop down the rows
+            current_active_date = "Baseline 2026"
+            
             for _, row in df.iterrows():
                 if row.dropna().empty: 
                     continue
                 
-                raw_name = str(row.iloc[0]).strip()
+                # Check if this row establishes a new exact timeline/date threshold
+                first_cell_val = str(row.iloc[1]).strip()
+                if "2026-" in first_cell_val:
+                    current_active_date = first_cell_val.split(" ")[0] # extract exact date string (YYYY-MM-DD)
+                    continue
                 
-                # Clean up Last, First formats into standard First Last human name layouts
+                raw_name = str(row.iloc[0]).strip()
+                if raw_name == "nan" or not raw_name:
+                    raw_name = str(row.iloc[1]).strip()
+                    
                 if ',' in raw_name:
                     p = raw_name.split(',')
                     raw_name = f"{p[1].strip()} {p[0].strip()}"
                 
-                # Strict Human-Name Validation Filters:
-                # 1. Eliminate pure numbers/codes
-                # 2. Eliminate system strings in the blacklist
-                # 3. Ensure it looks like a realistic name component string length
-                if any(k in raw_name.lower() for k in system_blacklist) or raw_name.isdigit() or len(raw_name) < 3:
+                # Strict Filter Validation
+                if any(k in raw_name.lower() for k in system_blacklist) or raw_name.isdigit() or len(raw_name) < 3 or raw_name == "nan":
                     continue
                 
                 auditors_found.add(raw_name)
                 
-                for val in row.iloc[2:]:
-                    v_str = str(val).strip().upper()
-                    if v_str in ['C', 'X', '100', '88.89', '90', '95', '75', '86', '96', '64'] or any(char.isdigit() for char in v_str):
-                        score_out = "100%" if v_str in ['C', 'X', 'COMPLETE'] else (f"{v_str}%" if "%" not in v_str else v_str)
-                        area_out = str(row.iloc[1]) if len(str(row.iloc[1])) > 3 else "General Facility Floor"
+                # Step through individual column metrics to map specific locations/compliance marks
+                for col_idx, val in enumerate(row.iloc[2:]):
+                    val_str = str(val).strip()
+                    if val_str != "nan" and len(val_str) > 1:
+                        area_out = str(row.iloc[1]) if (len(str(row.iloc[1])) > 3 and str(row.iloc[1]) != "nan") else "General Plant boundary"
                         
                         all_records.append({
-                            "Target Period": "Spreadsheet Baseline Schedule",
-                            "Auditor": raw_name,
-                            "Operational Area": area_out,
+                            "Scheduled Target Date": current_active_date,
+                            "Auditor Name": raw_name,
+                            "Department/Area": area_out,
                             "Classification Type": sheet,
-                            "Current Status / Score": score_out,
+                            "Current Assignment / Status": val_str,
                         })
         except:
             pass
+            
     return pd.DataFrame(all_records), sorted(list(auditors_found))
 
 excel_records, parsed_names = load_and_transform_schedule(excel_file)
@@ -183,9 +190,9 @@ if not parsed_names:
 # Load up persistent web inputs 
 if os.path.exists("audit_data.csv"):
     live_records = pd.read_csv("audit_data.csv")
-    live_records.columns = ["Target Period", "Auditor", "Operational Area", "Classification Type", "Current Status / Score"]
+    live_records.columns = ["Scheduled Target Date", "Auditor Name", "Department/Area", "Classification Type", "Current Assignment / Status"]
 else:
-    live_records = pd.DataFrame(columns=["Target Period", "Auditor", "Operational Area", "Classification Type", "Current Status / Score"])
+    live_records = pd.DataFrame(columns=["Scheduled Target Date", "Auditor Name", "Department/Area", "Classification Type", "Current Assignment / Status"])
 
 combined_dataset = pd.concat([live_records, excel_records], ignore_index=True) if not excel_records.empty else live_records
 
@@ -206,56 +213,39 @@ view_mode = st.sidebar.radio("Go To View:", ["📊 Executive Chart Dashboard", "
 # -----------------------------
 if view_mode == "📊 Executive Chart Dashboard":
     st.title("Century Aluminum Corporate Audit Hub")
-    st.markdown("Interactive performance overview compiled directly from live operational sheets.")
+    st.markdown("Interactive performance overview tracking clean individual assignments and precise time windows.")
     st.markdown("---")
     
     total_audits = len(combined_dataset)
     unique_types = combined_dataset["Classification Type"].nunique() if total_audits > 0 else 0
     
-    def calculate_numeric_avg(df):
-        if df.empty: return 100.0
-        scores = []
-        for s in df["Current Status / Score"]:
-            s_clean = str(s).replace('%', '').strip().upper()
-            if s_clean in ['C', 'X', 'COMPLETE', 'N/A', '']:
-                scores.append(100.0)
-            else:
-                try: scores.append(float(s_clean))
-                except: scores.append(100.0)
-        return round(sum(scores) / len(scores), 1) if scores else 100.0
-
-    system_compliance = calculate_numeric_avg(combined_dataset)
-    
-    m_col1, m_col2, m_col3 = st.columns(3)
+    m_col1, m_col2 = st.columns(2)
     with m_col1:
-        st.markdown(f'<div class="metric-card">📋 <span style="color:#64748B;">Total Records Unified</span><h3>{total_audits:,}</h3></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card">📋 <span style="color:#64748B;">Total Assigned Records</span><h3>{total_audits:,}</h3></div>', unsafe_allow_html=True)
     with m_col2:
-        st.markdown(f'<div class="metric-card">🎯 <span style="color:#64748B;">Compliance System Average</span><h3>{system_compliance}%</h3></div>', unsafe_allow_html=True)
-    with m_col3:
         st.markdown(f'<div class="metric-card">🏗️ <span style="color:#64748B;">Monitored Categories</span><h3>{unique_types}</h3></div>', unsafe_allow_html=True)
         
     st.markdown("<br>", unsafe_allow_html=True)
     
     if total_audits > 0:
-        st.subheader("📈 Category Performance & Compliance Benchmarks")
-        chart_prep = combined_dataset.copy()
-        chart_prep["Score_Numeric"] = [float(str(s).replace('%','').strip()) if str(s).replace('%','').strip().replace('.','',1).isdigit() else 100.0 for s in chart_prep["Current Status / Score"]]
-        chart_data = chart_prep.groupby("Classification Type")["Score_Numeric"].mean().reset_index()
-        chart_data.columns = ["Audit Classification Type", "Compliance Score Rating (%)"]
-        st.bar_chart(data=chart_data, x="Audit Classification Type", y="Compliance Score Rating (%)", use_container_width=True)
+        st.subheader("📈 Audits Tracked by Program Category")
+        chart_data = combined_dataset.groupby("Classification Type").size().reset_index(name="Total Count")
+        chart_data.columns = ["Audit Classification Type", "Total Active Assignments"]
+        st.bar_chart(data=chart_data, x="Audit Classification Type", y="Total Active Assignments", use_container_width=True)
         
     st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("📋 Dynamic Data Classification Ledger")
+    st.subheader("📋 Master Compliance Schedule Ledger")
     
     all_categories = list(combined_dataset["Classification Type"].unique()) if total_audits > 0 else ["No Active Logs Found"]
-    selected_tab_category = st.selectbox("Select Classification View Framework:", ["View All Unified Rows"] + all_categories)
+    selected_tab_category = st.selectbox("Filter Ledger View Framework:", ["View All Unified Rows"] + all_categories)
     
     display_filter_df = combined_dataset.copy()
     if selected_tab_category != "View All Unified Rows":
         display_filter_df = display_filter_df[display_filter_df["Classification Type"] == selected_tab_category]
         
     if not display_filter_df.empty:
-        st.dataframe(display_filter_df, use_container_width=True, height=380)
+        # Columns explicitly display 'Scheduled Target Date' and 'Auditor Name' clearly up front
+        st.dataframe(display_filter_df[["Scheduled Target Date", "Auditor Name", "Department/Area", "Classification Type", "Current Assignment / Status"]], use_container_width=True, height=400)
     else:
         st.info("No tracked audits recorded in this category yet.")
 
@@ -264,36 +254,34 @@ if view_mode == "📊 Executive Chart Dashboard":
 # -----------------------------
 elif view_mode == "📋 Direct Entry Log":
     st.title("Log Completed Safety Actions")
-    st.markdown("Bypass complicated spreadsheet cells completely by executing data inputs below.")
+    st.markdown("Bypass spreadsheet cells by executing precise direct entries below.")
     st.markdown("---")
     
     with st.form("web_entry_form", clear_on_submit=True):
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            in_auditor = st.selectbox("Select Certified Auditor Name (Strict Human Filtered)", parsed_names)
+            in_auditor = st.selectbox("Select Certified Auditor Name", parsed_names)
             in_area = st.selectbox("Target Plant Boundary / Area", ["Maintenance Area", "Carbon Floor", "Cast House", "Potline Grid", "Environmental Management"])
-            in_date = st.date_input("Audit Action Execution Date", value=date.today())
+            in_date = st.date_input("Exact Execution Date", value=date.today())
         with col_f2:
             in_type = st.selectbox("Audit Program Classification System", ["LPA", "Safe Obs - GS and EHS", "Safe Obs - Leadership", "PPE", "LOTO", "Mobile Equip", "HK Scores"])
-            is_c_flag = st.checkbox("Mark execution as Clean / 100% Complete status ('C' Flag indicator)")
-            in_score = st.number_input("If numeric evaluation, enter exact score (%)", min_value=0.0, max_value=100.0, value=100.0, step=1.0, disabled=is_c_flag)
+            in_status = st.text_input("Assignment Status / Location Note", placeholder="e.g., Complete, Crane Shop, 100%")
             
         if st.form_submit_button("Securely Write Entry to Audit Files", type="primary"):
-            final_status_metric = "100%" if is_c_flag else f"{in_score}%"
             new_audit_record = pd.DataFrame([{
-                "Target Period": str(in_date),
-                "Auditor": in_auditor,
-                "Operational Area": in_area,
+                "Scheduled Target Date": str(in_date),
+                "Auditor Name": in_auditor,
+                "Department/Area": in_area,
                 "Classification Type": in_type,
-                "Current Status / Score": final_status_metric
+                "Current Assignment / Status": in_status if in_status.strip() else "Complete"
             }])
             
             if os.path.exists("audit_data.csv"):
                 base_df = pd.read_csv("audit_data.csv")
-                base_df.columns = ["Target Period", "Auditor", "Operational Area", "Classification Type", "Current Status / Score"]
+                base_df.columns = ["Scheduled Target Date", "Auditor Name", "Department/Area", "Classification Type", "Current Assignment / Status"]
                 pd.concat([base_df, new_audit_record], ignore_index=True).to_csv("audit_data.csv", index=False)
             else:
                 new_audit_record.to_csv("audit_data.csv", index=False)
                 
-            st.success("🎉 Performance metric registered safely! Reloading active metrics engine dashboard views.")
+            st.success("🎉 Entry registered successfully! Check the main dashboard ledger to review updates.")
             st.rerun()
