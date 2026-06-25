@@ -43,6 +43,9 @@ for sheet in xls.sheet_names:
                 ):
                     all_names.add(val)
 
+# Explicitly ensure Wilson Smith is included in the auditor names
+all_names.add("Wilson Smith")
+
 # convert to sorted list
 name_list = sorted(all_names)
 
@@ -79,8 +82,10 @@ if page == "📋 Enter Audit":
     with st.form("audit_form"):
         auditor = st.selectbox("Auditor", name_list)
 
+        # Updated with Green Mill, Coke Tank, and Rod Shop
         area = st.selectbox("Area", [
-            "Maintenance", "Carbon", "Cast House", "Potline", "Environmental"
+            "Maintenance", "Carbon", "Cast House", "Potline", "Environmental",
+            "Green Mill", "Coke Tank", "Rod Shop"
         ])
 
         audit_type = st.selectbox("Audit Type", [
