@@ -240,13 +240,23 @@ page = st.sidebar.radio(
 if page == "📊 Dashboard":
     st.header("Century Aluminum Audit Performance Dashboard")
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Records Loaded", f"{len(user_data):,}")
+    # Process scores dynamically (Treating numerical data correctly and counting 'C' as complete)
+    total_records = len(user_data)
     
     if not user_data.empty:
         try:
-            numeric_scores = pd.to_numeric(user_data['Score'], errors='coerce')
-            avg_score = round(numeric_scores.mean(), 1) if not numeric_scores.dropna().empty else 100.0
+            # Map clean numerical values, treating 'C', 'N/A' or complete labels safely as 100% compliant completions
+            def parse_score(val):
+                s = str(val).strip().upper()
+                if s in ['C', 'N/A', 'COMPLETE'] or 'COMPLETE' in s:
+                    return 100.0
+                try:
+                    return float(val)
+                except:
+                    return None
+            
+            clean_scores = user_data['Score'].apply(parse_score).dropna()
+            avg_score = round(clean_scores.mean(), 1) if not clean_scores.empty else 100.0
         except:
             avg_score = 100.0
         active_zones = user_data["Area"].nunique()
@@ -254,6 +264,8 @@ if page == "📊 Dashboard":
         avg_score = 100.0
         active_zones = 0
         
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Records Loaded", f"{total_records:,}")
     col2.metric("Overall System Rating", f"{avg_score}%")
     col3.metric("Monitored Zones Active", str(active_zones))
     
@@ -317,7 +329,7 @@ elif page == "📋 Enter Audit":
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.form_submit_button("Submit Entry to Database", type="primary"):
-            final_score = "N/A" if is_complete_only else score
+            final_score = "C" if is_complete_only else score
             completion_tag = "[COMPLETE]" if is_complete_only else f"[{score}%]"
             
             new_row = pd.DataFrame([{
@@ -332,28 +344,34 @@ elif page == "📋 Enter Audit":
             save_user_data(user_data)
             st.success("✅ Audit logged securely into ledger file database!")
 
-elif page == "📁 Excel Viewer":
-    st.header("Spreadsheet Tab Visualizer")
-    xls_viewer = pd.ExcelFile(excel_file)
-    sheet = st.selectbox("Choose Sheet Tab to View", xls_viewer.sheet_names)
-    st.dataframe(pd.read_excel(excel_file, sheet_name=sheet), use_container_width=True)
-
-elif page == "👥 Names":
-    st.header("Verified Clean Auditor Registry")
-    st.write(f"Total Unique Filtered Personnel Names Extracted: **{len(name_list)}**")
-    name_df = pd.DataFrame(name_list, columns=["Employee Name Listing"])
-    st.dataframe(name_df, use_container_width=True)
-
 # -----------------------------
 # ⚠️ UNIFIED SYSTEM RESET AREA
 # -----------------------------
 if page == "📊 Dashboard":
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     with st.expander("🚨 Advanced Administrative System Wiping"):
-        st.warning("Warning: Clicking the button below wipes all manual records entered up to this second.")
-        if st.button("Reset Entire CSV Local Database Layer"):
+        st.markdown("### Targeted Data Purge Actions")
+        
+        # Action 1: Clear only the logged audits
+        st.warning("⚠️ **Option A:** Clear All Logged Audit Records")
+        st.write("This cleans out your collected history log (`audit_data.csv`) but keeps your authorized login accounts safe.")
+        if st.button("Delete Audit Data Logs Only"):
             if os.path.exists("audit_data.csv"):
                 os.remove("audit_data.csv")
             st.cache_data.clear()
-            st.success("Database wiped successfully. Reloading system...")
+            st.success("Audit records cleared. Reloading...")
+            st.rerun()
+            
+        st.markdown("---")
+        
+        # Action 2: Total Nuclear Wipeout
+        st.error("💀 **Option B:** Full Database Reset (Nuclear)")
+        st.write("This deletes absolutely everything—all recorded audits AND all custom user profile accounts.")
+        if st.button("Reset Entire System (Audits + User Accounts)"):
+            if os.path.exists("audit_data.csv"):
+                os.remove("audit_data.csv")
+            if os.path.exists(DB_FILE):
+                os.remove(DB_FILE)
+            st.cache_data.clear()
+            st.success("System fully initialized back to factory standards. Reloading system...")
             st.rerun()
