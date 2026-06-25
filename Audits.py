@@ -10,14 +10,15 @@ import re
 # -----------------------------
 st.set_page_config(layout="wide", page_title="Century Aluminum - Secure Audit System")
 
-# Clean, professional CSS stylesheet injecting custom corporate spacing rules
+# Clean, professional UI stylesheet making it look like an enterprise web app
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1.5rem; }
-    div[data-testid="stMetricValue"] { font-size: 26px; font-weight: bold; color: #1E3A8A; }
-    .stDataFrame { border: 1px solid #E2E8F0; border-radius: 6px; }
+    div[data-testid="stMetricValue"] { font-size: 28px; font-weight: bold; color: #1E3A8A; }
+    .stDataFrame { border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); }
     h1, h2, h3 { color: #0F172A; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }
     .login-box { padding: 2.5rem; border-radius: 8px; border: 1px solid #CBD5E1; background-color: #F8FAFC; max-width: 480px; margin: 2rem auto; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+    .card-container { background-color: #FFFFFF; padding: 1.5rem; border: 1px solid #E2E8F0; border-radius: 8px; margin-bottom: 1rem; }
     .danger-zone { border: 1px solid #FCA5A5; padding: 1.5rem; border-radius: 8px; background-color: #FEF2F2; margin-top: 1.5rem; }
     </style>
 """, unsafe_allow_html=True)
@@ -48,12 +49,7 @@ def save_new_user(email, name, password):
     users = load_users()
     if email in users:
         return False
-    
-    new_row = pd.DataFrame([{
-        "email": email,
-        "name": name,
-        "password_hash": hash_password(password)
-    }])
+    new_row = pd.DataFrame([{"email": email, "name": name, "password_hash": hash_password(password)}])
     new_row.to_csv(DB_FILE, mode='a', header=not os.path.exists(DB_FILE), index=False)
     return True
 
@@ -79,31 +75,26 @@ if not st.session_state.authenticated:
         with st.container():
             st.markdown('<div class="login-box">', unsafe_allow_html=True)
             st.subheader("Account Sign In")
-            
             email_input = st.text_input("Corporate Email Address", placeholder="username@centuryaluminum.com", key="login_email")
             password_input = st.text_input("Password", type="password", key="login_pass")
             
             if st.button("Verify Identity & Sign In", use_container_width=True):
                 clean_email = email_input.strip().lower()
-                
                 if not clean_email.endswith("@centuryaluminum.com"):
                     st.error("❌ Access Denied. Only valid @centuryaluminum.com domains are authorized.")
                 elif clean_email in users_database and hash_password(password_input) == users_database[clean_email]["password_hash"]:
                     st.session_state.authenticated = True
                     st.session_state.auth_user_email = clean_email
                     st.session_state.auth_user_name = users_database[clean_email]["name"]
-                    st.success("✅ Credentials verified. Access granted.")
+                    st.success("✅ Credentials verified.")
                     st.rerun()
                 else:
-                    st.error("❌ Invalid email or password entry.")
+                    st.error("❌ Invalid credentials entry.")
             st.markdown('</div>', unsafe_allow_html=True)
-
     else:
         with st.container():
             st.markdown('<div class="login-box">', unsafe_allow_html=True)
             st.subheader("Create Authorized Profile")
-            st.info("Registration requires an official corporate Century Aluminum email account.")
-            
             reg_name = st.text_input("Full Name (First Last)", placeholder="John Doe")
             reg_email = st.text_input("Corporate Email Address", placeholder="username@centuryaluminum.com")
             reg_password = st.text_input("Choose Password", type="password")
@@ -111,103 +102,101 @@ if not st.session_state.authenticated:
             
             if st.button("Register Corporate Profile", use_container_width=True):
                 clean_reg_email = reg_email.strip().lower()
-                
-                if not reg_name.strip():
-                    st.error("❌ Please provide your name.")
-                elif not clean_reg_email.endswith("@centuryaluminum.com"):
-                    st.error("❌ Registration Blocked. Email domain must explicitly be @centuryaluminum.com.")
-                elif len(reg_password) < 6:
-                    st.error("❌ Password must be at least 6 characters long.")
+                if not reg_name.strip() or not clean_reg_email.endswith("@centuryaluminum.com") or len(reg_password) < 6:
+                    st.error("❌ Invalid submission details. Ensure domain is correct and password is 6+ chars.")
                 elif reg_password != confirm_password:
                     st.error("❌ Passwords do not match.")
                 elif clean_reg_email in users_database:
-                    st.error("❌ This email address is already registered.")
+                    st.error("❌ Email already exists.")
                 else:
-                    success = save_new_user(clean_reg_email, reg_name.strip(), reg_password)
-                    if success:
-                        st.success("🎉 Registration complete! Switch to the 'Sign In' tab above to authenticate.")
-                    else:
-                        st.error("❌ Database conflict occurred.")
+                    if save_new_user(clean_reg_email, reg_name.strip(), reg_password):
+                        st.success("🎉 Registered! Switch to Sign In tab.")
             st.markdown('</div>', unsafe_allow_html=True)
-
     st.stop()
 
 # -----------------------------
-# 👥 MASTER AUDITOR REGISTRY CLEANER
+# 📊 EXCEL REPOSITORY PARSER ENGINE
 # -----------------------------
 excel_file = "Audit Schedule - Internal - LPA.xlsx"
 
-if not os.path.exists(excel_file):
-    st.error("❌ System Critical Error: Source Excel file not found.")
-    st.stop()
-
 @st.cache_data
-def get_clean_auditor_names(file_path):
-    xls = pd.ExcelFile(file_path)
-    discovered_names = set()
+def parse_all_excel_schedules(file_path):
+    if not os.path.exists(file_path):
+        return pd.DataFrame(), []
     
-    EXCLUDE_KEYWORDS = {
-        "week", "sheet", "audit", "shift", "room", "bake", "casting", "fabrication", 
-        "compressor", "hot side", "cold side", "east", "west", "baghouse", "tank", 
-        "mill", "shop", "rod", "house", "fluid", "building", "café", "snacks", 
-        "catering", "equipment", "score", "formula", "required", "vacation", "complete", "loto"
-    }
-
-    EXCLUDED_NAMES = {
-        "6", "7", "8", "25", "26", "33", "36", "37", "38", "40", "Any",
-        "CH Laboratory", "CH Maintenance Area", "CH Shipping/Scales", "CH Shippinh/Scalesl",
-        "MOBILE EQUIP", "MT Potline", "PL Services/ Ore Unloading", 
-        "SAFE OBSERVATION - GS AND EHS", "SAFE OBSERVATIONS - LEADERSHIP", 
-        "SAFE OBSERVATION - GS and EHS", "Services / Ore Unloading"
-    }
-
+    xls = pd.ExcelFile(file_path)
+    all_extracted_records = []
+    discovered_auditors = set()
+    
+    # Parser mapping config per tab structure
     for sheet in xls.sheet_names:
         if sheet in ["Jobs and shifts", "Sheet1"]:
             continue
         try:
-            df_temp = pd.read_excel(file_path, sheet_name=sheet)
-            for row in df_temp.itertuples(index=False):
-                for cell in row:
-                    if pd.isna(cell):
-                        continue
-                    cell_str = str(cell).strip().replace('"', '')
+            df = pd.read_excel(file_path, sheet_name=sheet)
+            
+            # Clean and isolate column elements matching standard structured tables
+            for idx, row in df.iterrows():
+                row_list = [str(x).strip() for x in row.dropna().tolist()]
+                if not row_list:
+                    continue
+                
+                # Dynamically extract scores/completions linked to known names
+                name_candidate = str(row.iloc[0]).strip()
+                if ',' in name_candidate:
+                    parts = name_candidate.split(',')
+                    name_candidate = f"{parts[1].strip()} {parts[0].strip()}"
+                
+                # Filter out system header text markers
+                if any(k in name_candidate.lower() for k in ["week", "sheet", "audit", "shift", "score", "nan", "mobile equip", "loto", "ppe"]):
+                    continue
+                
+                if len(name_candidate) > 2 and not name_candidate.isdigit():
+                    discovered_auditors.add(name_candidate)
                     
-                    if not cell_str or cell_str in EXCLUDED_NAMES or any(k in cell_str.lower() for k in EXCLUDE_KEYWORDS):
-                        continue
-                        
-                    if cell_str.isdigit():
-                        continue
-                    
-                    if ',' in cell_str:
-                        parts = [p.strip() for p in cell_str.split(',')]
-                        if len(parts) == 2:
-                            first_name = re.sub(r'\(.*?\)', '', parts[1]).strip()
-                            last_name = parts[0].strip()
-                            cell_str = f"{first_name} {last_name}"
-                    
-                    words = cell_str.split()
-                    if len(words) >= 2 and words[0][0].isupper() and words[1][0].isupper() and len(cell_str) < 30:
-                        if cell_str not in EXCLUDED_NAMES and not any(w in EXCLUDED_NAMES for w in words):
-                            discovered_names.add(cell_str)
-        except:
+                    # Scan row positions for scores or completion 'C' values
+                    for cell_val in row.iloc[2:]:
+                        val_str = str(cell_val).strip().upper()
+                        if val_str in ['C', 'X', '100', '88.89', '90', '95', '75', '86', '96', '64'] or any(v.replace('.','',1).isdigit() for v in [val_str]):
+                            score_disp = "C" if val_str in ['C', 'X'] else val_str
+                            area_assigned = str(row.iloc[1]) if len(str(row.iloc[1])) > 3 else "Operational Plant Area"
+                            
+                            all_extracted_records.append({
+                                "Date": "Schedule Tracking Period",
+                                "Auditor": name_candidate,
+                                "Area": area_assigned,
+                                "Type": sheet,
+                                "Score": score_disp,
+                                "Notes": f"Imported directly from legacy tracking grid worksheet tab [{sheet}]."
+                            })
+        except Exception:
             pass
             
-    return sorted(list(discovered_names))
+    return pd.DataFrame(all_extracted_records), sorted(list(discovered_auditors))
 
-name_list = get_clean_auditor_names(excel_file)
-if not name_list:
-    name_list = ["Anthony Wall", "Art DiFilippo", "Brett Meyer", "Brian Weatherford", "Bryan Profit", "Freddie Gamble", "Tim Kass"]
+excel_records, parsed_names = parse_all_excel_schedules(excel_file)
 
 # -----------------------------
-# RUN TIME PERSISTENCE ENGINE
+# RUN TIME LIVE DATA INTERFACE
 # -----------------------------
 if os.path.exists("audit_data.csv"):
-    user_data = pd.read_csv("audit_data.csv")
+    live_records = pd.read_csv("audit_data.csv")
 else:
-    user_data = pd.DataFrame(columns=["Date", "Auditor", "Area", "Type", "Score", "Notes"])
+    live_records = pd.DataFrame(columns=["Date", "Auditor", "Area", "Type", "Score", "Notes"])
+
+# Blend files with user entered manual overrides cleanly
+if not excel_records.empty:
+    user_data = pd.concat([live_records, excel_records], ignore_index=True)
+else:
+    user_data = live_records
 
 def save_user_data(df):
-    df.to_csv("audit_data.csv", index=False)
+    # Only save locally captured records back to delta storage file
+    live_only = df[df["Date"] != "Schedule Tracking Period"]
+    live_only.to_csv("audit_data.csv", index=False)
+
+if not parsed_names:
+    parsed_names = ["Anthony Wall", "Art DiFilippo", "Brett Meyer", "Brian Weatherford", "Bryan Profit", "Freddie Gamble", "Tim Kass"]
 
 # -----------------------------
 # SIDEBAR CONTROL PANEL
@@ -215,46 +204,31 @@ def save_user_data(df):
 st.sidebar.markdown(f"👤 **Session Profile:**\n**{st.session_state.auth_user_name}**\n`{st.session_state.auth_user_email}`")
 if st.sidebar.button("Secure Logout", use_container_width=True):
     st.session_state.authenticated = False
-    st.session_state.auth_user_email = ""
-    st.session_state.auth_user_name = ""
     st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🏢 Facility Management")
-page = st.sidebar.radio(
-    "Navigation Options",
-    ["📊 Dashboard", "📋 Enter Audit"],
-    key="main_navigation_radio"
-)
+page = st.sidebar.radio("Navigation Options", ["📊 Consolidated Charts & Tables", "📋 Enter Audit"])
 
 # -----------------------------
 # DYNAMIC NAVIGATION PAGES
 # -----------------------------
-if page == "📊 Dashboard":
-    st.header("Century Aluminum Audit Performance Dashboard")
+if page == "📊 Consolidated Charts & Tables":
+    st.header("Century Aluminum Performance Dashboard")
+    st.markdown("Consolidated real-time views from your audit database log files and uploaded schedule registries.")
     
+    # Math execution wrapper transforming 'C' statuses instantly to 100% compliant counts
     total_records = len(user_data)
-    
     if not user_data.empty:
-        try:
-            # Aggressive verification parser function
-            def parse_score(val):
-                if pd.isna(val):
-                    return 100.0  # Treat completely blank historical rows as Completed
-                
-                s = str(val).strip().upper()
-                # Catch raw "C", "N/A", text blocks, or blank indicators
-                if s in ['C', 'N/A', 'COMPLETE', ''] or 'COMPLETE' in s or 'COMP' in s:
-                    return 100.0
-                try:
-                    return float(val)
-                except:
-                    return 100.0 # Fallback default for any legacy string markers to count as 100% compliant
+        def parse_score(val):
+            if pd.isna(val): return 100.0
+            s = str(val).strip().upper()
+            if s in ['C', 'X', 'N/A', 'COMPLETE', ''] or 'COMPLETE' in s: return 100.0
+            try: return float(val)
+            except: return 100.0
             
-            clean_scores = user_data['Score'].apply(parse_score)
-            avg_score = round(clean_scores.mean(), 1) if not clean_scores.empty else 100.0
-        except:
-            avg_score = 100.0
+        clean_scores = user_data['Score'].apply(parse_score)
+        avg_score = round(clean_scores.mean(), 1)
         active_zones = user_data["Area"].nunique()
     else:
         avg_score = 100.0
@@ -262,110 +236,75 @@ if page == "📊 Dashboard":
         
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Records Loaded", f"{total_records:,}")
-    col2.metric("Overall System Rating", f"{avg_score}%")
+    col2.metric("Overall Compliance Rating", f"{avg_score}%")
     col3.metric("Monitored Zones Active", str(active_zones))
     
     st.markdown("---")
-    st.subheader("📋 Historical Consolidated Data Ledger")
     
+    # 📈 MATRIX STYLED VISUAL CHART SECTION
+    st.subheader("📈 Type Breakdown Compliance Charts")
     if not user_data.empty:
-        display_df = user_data.copy()
-        display_df.index.name = "Row ID"
-        st.dataframe(display_df.reset_index(), use_container_width=True)
+        type_summary = user_data.copy()
+        type_summary["NumericScore"] = type_summary["Score"].apply(parse_score)
+        chart_df = type_summary.groupby("Type")["NumericScore"].mean().reset_index()
+        chart_df.columns = ["Audit Type", "Compliance Rating Average (%)"]
         
+        st.bar_chart(data=chart_df, x="Audit Type", y="Compliance Rating Average (%)", use_container_width=True)
+    
+    # 📋 THE MAIN CLEAN DATA LEDGER TABLE View
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📋 Unified Performance Ledger Table")
+    
+    # Add a global filter mechanism to switch views quickly
+    filter_type = st.selectbox("Filter Chart View by Audit Type:", ["All Data Categories"] + list(user_data["Type"].unique()))
+    
+    display_df = user_data.copy()
+    if filter_type != "All Data Categories":
+        display_df = display_df[display_df["Type"] == filter_type]
+        
+    if not display_df.empty:
+        display_df.index.name = "Record Index"
+        st.dataframe(display_df.reset_index(), use_container_width=True, height=400)
+        
+        # Row item interactive scrubbing tool
         st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
         st.subheader("🗑️ Record Management Panel")
-        st.markdown("Select a targeted layout entry row index below to permanently scrub it from the storage layer.")
-        
-        del_col1, del_col2 = st.columns([2, 1])
-        with del_col1:
-            row_to_delete = st.selectbox(
-                "Select Row ID to Delete", 
-                options=list(user_data.index),
-                format_func=lambda idx: f"Row {idx} — {user_data.loc[idx, 'Auditor']} | {user_data.loc[idx, 'Area']} ({user_data.loc[idx, 'Type']})"
-            )
-        with del_col2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Delete Selected Audit Entry", type="primary", use_container_width=True):
-                user_data = user_data.drop(row_to_delete).reset_index(drop=True)
-                save_user_data(user_data)
-                st.success(f"Record successfully deleted.")
+        row_to_delete = st.selectbox(
+            "Select Record Index Row to Scrape/Delete", 
+            options=list(display_df.index),
+            format_func=lambda idx: f"Index {idx} — {display_df.loc[idx, 'Auditor']} | {display_df.loc[idx, 'Area']} [{display_df.loc[idx, 'Type']}]"
+        )
+        if st.button("Delete Selected Audit Entry", type="primary"):
+            # Check if it's a live row or legacy row
+            if user_data.loc[row_to_delete, "Date"] == "Schedule Tracking Period":
+                st.error("Cannot delete a static spreadsheet record row directly. You can clear them from Option A below.")
+            else:
+                live_records = pd.read_csv("audit_data.csv")
+                # match using content properties safely
+                tgt_auditor = user_data.loc[row_to_delete, "Auditor"]
+                tgt_notes = user_data.loc[row_to_delete, "Notes"]
+                live_records = live_records[~((live_records["Auditor"] == tgt_auditor) & (live_records["Notes"] == tgt_notes))]
+                live_records.to_csv("audit_data.csv", index=False)
+                st.success("Record scraped.")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     else:
-        st.info("The internal database ledger is currently empty. Submit a log sheet entry in 'Enter Audit' to populate records.")
+        st.info("No matching records found.")
 
 elif page == "📋 Enter Audit":
     st.header("Enter New Audit Sheet Records")
-
     with st.form("audit_form", clear_on_submit=True):
         f_col1, f_col2 = st.columns(2)
         with f_col1:
-            auditor = st.selectbox("Select Auditor Name", name_list)
+            auditor = st.selectbox("Select Auditor Name", parsed_names)
             area = st.selectbox("Plant Operational Area", ["Maintenance", "Carbon", "Cast House", "Potline", "Environmental"])
             audit_date = st.date_input("Audit Execution Date", value=date.today())
         with f_col2:
             audit_type = st.selectbox("Audit Type Classification", ["LPA", "Safe Observation", "PPE", "LOTO", "Mobile Equipment", "HK Score"])
+            is_complete_only = st.checkbox("Mark Audit as Complete ('C' status flag)")
+            score = st.number_input("Recorded Performance Score (%)", min_value=0.0, max_value=100.0, value=100.0, step=1.0, disabled=is_complete_only)
             
-            is_complete_only = st.checkbox(
-                "Mark Audit as Complete (Score not required / observations only)", 
-                help="Check this if the inspection type relies on completion status/checkmarks rather than a raw percentage score."
-            )
-            
-            score = st.number_input(
-                "Recorded Performance Score (%)", 
-                min_value=0.0, max_value=100.0, 
-                value=0.0 if is_complete_only else 100.0, 
-                step=1.0,
-                disabled=is_complete_only,
-                help="Unavailable when 'Mark Audit as Complete' is active." if is_complete_only else None
-            )
-            
-        notes = st.text_area("Observations & Notes", placeholder="Type details or observations here...")
-
-        st.markdown("<br>", unsafe_allow_html=True)
+        notes = st.text_area("Observations & Notes")
         if st.form_submit_button("Submit Entry to Database", type="primary"):
             final_score = "C" if is_complete_only else score
-            completion_tag = "[COMPLETE]" if is_complete_only else f"[{score}%]"
-            
-            new_row = pd.DataFrame([{
-                "Date": str(audit_date),
-                "Auditor": auditor,
-                "Area": area,
-                "Type": audit_type,
-                "Score": final_score,
-                "Notes": f"{completion_tag} {notes} (Logged securely by profile: {st.session_state.auth_user_email})"
-            }])
-            user_data = pd.concat([user_data, new_row], ignore_index=True)
-            save_user_data(user_data)
-            st.success("✅ Audit logged securely into ledger file database!")
-
-# -----------------------------
-# ⚠️ UNIFIED SYSTEM RESET AREA
-# -----------------------------
-if page == "📊 Dashboard":
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    with st.expander("🚨 Advanced Administrative System Wiping"):
-        st.markdown("### Targeted Data Purge Actions")
-        
-        st.warning("⚠️ **Option A:** Clear All Logged Audit Records")
-        st.write("This cleans out your collected history log (`audit_data.csv`) but keeps your authorized login accounts safe.")
-        if st.button("Delete Audit Data Logs Only"):
-            if os.path.exists("audit_data.csv"):
-                os.remove("audit_data.csv")
-            st.cache_data.clear()
-            st.success("Audit records cleared. Reloading...")
-            st.rerun()
-            
-        st.markdown("---")
-        
-        st.error("💀 **Option B:** Full Database Reset (Nuclear)")
-        st.write("This deletes absolutely everything—all recorded audits AND all custom user profile accounts.")
-        if st.button("Reset Entire System (Audits + User Accounts)"):
-            if os.path.exists("audit_data.csv"):
-                os.remove("audit_data.csv")
-            if os.path.exists(DB_FILE):
-                os.remove(DB_FILE)
-            st.cache_data.clear()
-            st.success("System fully initialized back to factory standards. Reloading system...")
-            st.rerun()
+            new_row = pd.DataFrame(
