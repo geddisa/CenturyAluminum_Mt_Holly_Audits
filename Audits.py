@@ -5,9 +5,9 @@ import os
 import re
 
 # -----------------------------
-# PAGE SETUP
+# PAGE SETUP & CONFIG
 # -----------------------------
-st.set_page_config(layout="wide", page_title="Audit Management System")
+st.set_page_config(layout="wide", page_title="Century Aluminum - Audit System")
 
 st.markdown("""
     <style>
@@ -15,16 +15,47 @@ st.markdown("""
     div[data-testid="stMetricValue"] { font-size: 28px; font-weight: bold; color: #1E3A8A; }
     .stDataFrame { border: 1px solid #E2E8F0; border-radius: 4px; }
     h1, h2, h3 { color: #0F172A; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .login-box { padding: 2rem; border-radius: 8px; border: 1px solid #CBD5E1; background-color: #F8FAFC; max-width: 500px; margin: 0 auto; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📌 Audit Management System")
+# Initialize login session state variables
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "user_email" not in st.session_state:
+    st.session_state.user_email = ""
 
+# -----------------------------
+# 🔒 SECURITY: EMAIL GATEWAY
+# -----------------------------
+if not st.session_state.logged_in:
+    st.title("🔒 Corporate Security Access Gateway")
+    st.markdown("### Century Aluminum Company — Internal Systems Only")
+    
+    st.markdown("---")
+    with st.container():
+        st.markdown('<div class="login-box">', unsafe_allow_html=True)
+        email_input = st.text_input("Enter your Century Aluminum Corporate Email Address:", placeholder="username@centuryaluminum.com")
+        
+        if st.button("Authenticate Identity", use_container_width=True):
+            clean_email = email_input.strip().lower()
+            if clean_email.endswith("@centuryaluminum.com"):
+                st.session_state.logged_in = True
+                st.session_state.user_email = clean_email
+                st.success("✅ Access Granted. Loading Dashboard...")
+                st.rerun()
+            else:
+                st.error("❌ Access Denied. You must use a valid Century Aluminum email address (@centuryaluminum.com).")
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()  # Halt execution completely if not authenticated
+
+# -----------------------------
+# FILE AND DATA HANDLING
+# -----------------------------
 excel_file = "Audit Schedule - Internal - LPA.xlsx"
 
 if not os.path.exists(excel_file):
-    st.error("❌ Excel file not found")
-    st.write("Files found in folder:", os.listdir())
+    st.error("❌ System Error: Source Excel schedule template matrix file not found.")
     st.stop()
 
 xls = pd.ExcelFile(excel_file)
@@ -176,7 +207,7 @@ def parse_excel_history():
                             "Notes": f"Target checks assigned inside row index: {idx}."
                         })
 
-    # 5. Behavior-Based Safety Observations (Leadership, GS and EHS)
+    # 5. Behavior-Based Safety Observations
     for tab in ["Safe Obs - Leadership", "Safe Obs - GS and EHS", "Safe Obs GS EHS"]:
         if tab in xls.sheet_names:
             df_so = pd.read_excel(excel_file, sheet_name=tab)
@@ -225,8 +256,15 @@ def save_user_data(df):
     df.to_csv("audit_data.csv", index=False)
 
 # -----------------------------
-# SIDEBAR NAVIGATION
+# SIDEBAR NAVIGATION & SESSION PROFILE
 # -----------------------------
+st.sidebar.markdown(f"👤 **Logged in as:**\n`{st.session_state.user_email}`")
+if st.sidebar.button("Logout Key"):
+    st.session_state.logged_in = False
+    st.session_state.user_email = ""
+    st.rerun()
+
+st.sidebar.markdown("---")
 st.sidebar.markdown("### 🏢 Facility Management")
 page = st.sidebar.radio(
     "Navigation Options",
@@ -238,7 +276,7 @@ page = st.sidebar.radio(
 # 📊 DASHBOARD PAGE
 # -----------------------------
 if page == "📊 Dashboard":
-    st.header("Audit & Performance Dashboard")
+    st.header("Century Aluminum Audit Performance Dashboard")
     
     if user_data.empty:
         st.warning("No historical matrix logs compiled yet.")
@@ -253,8 +291,8 @@ if page == "📊 Dashboard":
             df = df[df["Area"] == area_filter]
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("Total Historical Records", f"{len(df):,}")
-        col2.metric("Overall Average Rating", f"{round(df['Score'].mean(), 1)}%" if not df['Score'].empty else "N/A")
+        col1.metric("Total Matrix Records Loaded", f"{len(df):,}")
+        col2.metric("Overall System Rating", f"{round(df['Score'].mean(), 1)}%" if not df['Score'].empty else "N/A")
         col3.metric("Monitored Zones Active", df["Area"].nunique())
         
         st.markdown("---")
@@ -298,7 +336,7 @@ elif page == "📋 Enter Audit":
                 "Area": area,
                 "Type": audit_type,
                 "Score": score,
-                "Notes": notes
+                "Notes": f"{notes} (Logged securely by: {st.session_state.user_email})"
             }])
             
             user_data = pd.concat([user_data, new_row], ignore_index=True)
