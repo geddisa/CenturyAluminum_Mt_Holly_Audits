@@ -128,33 +128,28 @@ def parse_all_excel_schedules(file_path):
     all_extracted_records = []
     discovered_auditors = set()
     
-    # Parser mapping config per tab structure
     for sheet in xls.sheet_names:
         if sheet in ["Jobs and shifts", "Sheet1"]:
             continue
         try:
             df = pd.read_excel(file_path, sheet_name=sheet)
             
-            # Clean and isolate column elements matching standard structured tables
             for idx, row in df.iterrows():
                 row_list = [str(x).strip() for x in row.dropna().tolist()]
                 if not row_list:
                     continue
                 
-                # Dynamically extract scores/completions linked to known names
                 name_candidate = str(row.iloc[0]).strip()
                 if ',' in name_candidate:
                     parts = name_candidate.split(',')
                     name_candidate = f"{parts[1].strip()} {parts[0].strip()}"
                 
-                # Filter out system header text markers
                 if any(k in name_candidate.lower() for k in ["week", "sheet", "audit", "shift", "score", "nan", "mobile equip", "loto", "ppe"]):
                     continue
                 
                 if len(name_candidate) > 2 and not name_candidate.isdigit():
                     discovered_auditors.add(name_candidate)
                     
-                    # Scan row positions for scores or completion 'C' values
                     for cell_val in row.iloc[2:]:
                         val_str = str(cell_val).strip().upper()
                         if val_str in ['C', 'X', '100', '88.89', '90', '95', '75', '86', '96', '64'] or any(v.replace('.','',1).isdigit() for v in [val_str]):
@@ -184,14 +179,12 @@ if os.path.exists("audit_data.csv"):
 else:
     live_records = pd.DataFrame(columns=["Date", "Auditor", "Area", "Type", "Score", "Notes"])
 
-# Blend files with user entered manual overrides cleanly
 if not excel_records.empty:
     user_data = pd.concat([live_records, excel_records], ignore_index=True)
 else:
     user_data = live_records
 
 def save_user_data(df):
-    # Only save locally captured records back to delta storage file
     live_only = df[df["Date"] != "Schedule Tracking Period"]
     live_only.to_csv("audit_data.csv", index=False)
 
@@ -217,7 +210,6 @@ if page == "📊 Consolidated Charts & Tables":
     st.header("Century Aluminum Performance Dashboard")
     st.markdown("Consolidated real-time views from your audit database log files and uploaded schedule registries.")
     
-    # Math execution wrapper transforming 'C' statuses instantly to 100% compliant counts
     total_records = len(user_data)
     if not user_data.empty:
         def parse_score(val):
@@ -241,7 +233,6 @@ if page == "📊 Consolidated Charts & Tables":
     
     st.markdown("---")
     
-    # 📈 MATRIX STYLED VISUAL CHART SECTION
     st.subheader("📈 Type Breakdown Compliance Charts")
     if not user_data.empty:
         type_summary = user_data.copy()
@@ -251,11 +242,9 @@ if page == "📊 Consolidated Charts & Tables":
         
         st.bar_chart(data=chart_df, x="Audit Type", y="Compliance Rating Average (%)", use_container_width=True)
     
-    # 📋 THE MAIN CLEAN DATA LEDGER TABLE View
     st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("📋 Unified Performance Ledger Table")
     
-    # Add a global filter mechanism to switch views quickly
     filter_type = st.selectbox("Filter Chart View by Audit Type:", ["All Data Categories"] + list(user_data["Type"].unique()))
     
     display_df = user_data.copy()
@@ -266,7 +255,6 @@ if page == "📊 Consolidated Charts & Tables":
         display_df.index.name = "Record Index"
         st.dataframe(display_df.reset_index(), use_container_width=True, height=400)
         
-        # Row item interactive scrubbing tool
         st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
         st.subheader("🗑️ Record Management Panel")
         row_to_delete = st.selectbox(
@@ -275,12 +263,10 @@ if page == "📊 Consolidated Charts & Tables":
             format_func=lambda idx: f"Index {idx} — {display_df.loc[idx, 'Auditor']} | {display_df.loc[idx, 'Area']} [{display_df.loc[idx, 'Type']}]"
         )
         if st.button("Delete Selected Audit Entry", type="primary"):
-            # Check if it's a live row or legacy row
             if user_data.loc[row_to_delete, "Date"] == "Schedule Tracking Period":
                 st.error("Cannot delete a static spreadsheet record row directly. You can clear them from Option A below.")
             else:
                 live_records = pd.read_csv("audit_data.csv")
-                # match using content properties safely
                 tgt_auditor = user_data.loc[row_to_delete, "Auditor"]
                 tgt_notes = user_data.loc[row_to_delete, "Notes"]
                 live_records = live_records[~((live_records["Auditor"] == tgt_auditor) & (live_records["Notes"] == tgt_notes))]
@@ -307,4 +293,35 @@ elif page == "📋 Enter Audit":
         notes = st.text_area("Observations & Notes")
         if st.form_submit_button("Submit Entry to Database", type="primary"):
             final_score = "C" if is_complete_only else score
-            new_row = pd.DataFrame(
+            new_row = pd.DataFrame([{
+                "Date": str(audit_date), 
+                "Auditor": auditor, 
+                "Area": area, 
+                "Type": audit_type, 
+                "Score": final_score, 
+                "Notes": f"{notes} (Logged via profile: {st.session_state.auth_user_email})"
+            }])
+            if os.path.exists("audit_data.csv"):
+                old_df = pd.read_csv("audit_data.csv")
+                pd.concat([old_df, new_row], ignore_index=True).to_csv("audit_data.csv", index=False)
+            else:
+                new_row.to_csv("audit_data.csv", index=False)
+            st.success("✅ Logged securely into data ledger!")
+            st.rerun()
+
+# -----------------------------
+# ⚠️ ADMINISTRATIVE WIPING
+# -----------------------------
+if page == "📊 Consolidated Charts & Tables":
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    with st.expander("🚨 Advanced Administrative System Wiping"):
+        if st.button("Delete Audit Data Logs Only"):
+            if os.path.exists("audit_data.csv"): os.remove("audit_data.csv")
+            st.cache_data.clear()
+            st.rerun()
+        st.markdown("---")
+        if st.button("Reset Entire System (Audits + User Accounts)"):
+            if os.path.exists("audit_data.csv"): os.remove("audit_data.csv")
+            if os.path.exists(DB_FILE): os.remove(DB_FILE)
+            st.cache_data.clear()
+            st.rerun()
